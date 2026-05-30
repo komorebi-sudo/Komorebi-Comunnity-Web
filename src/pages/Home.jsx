@@ -1,15 +1,8 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Search, ShoppingBag, User, Store, ArrowRight, Star, BookOpen, Shirt, Sparkles, Heart, Gamepad2, Coffee, Palette } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useCart } from '../context/CartContext'; 
-
-// --- MOCK DATA ---
-const mockStores = [
-  { id: 1, name: "Sakura Treats", type: "Snacks Asiáticos", rating: 4.9, cover: "bg-pink-100", avatar: "🌸" },
-  { id: 2, name: "Pixel Cozy", type: "Accesorios Gaming", rating: 4.8, cover: "bg-blue-100", avatar: "☁️" },
-  { id: 3, name: "Matcha Books", type: "Manga & Papelería", rating: 4.7, cover: "bg-emerald-100", avatar: "🍵" },
-  { id: 4, name: "Starlight", type: "Moda Kawaii", rating: 4.9, cover: "bg-purple-100", avatar: "✨" },
-];
+import { supabase } from '../lib/supabaseClient'; // IMPORTAMOS NUESTRO PUENTE A SUPABASE
 
 const mockCategoriesGrid = [
   { id: 1, name: "Snacks & Dulces", count: "12 tiendas", Icon: Coffee, color: "bg-pink-100", textColor: "text-pink-600" },
@@ -30,6 +23,34 @@ const mockTrending = [
 export default function Home() {
   const { getCartCount, toggleCart, addToCart } = useCart();
   const cartCount = getCartCount();
+  
+  // ESTADOS PARA MANEJAR DATOS REALES DE SUPABASE
+  const [stores, setStores] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  // FUNCIÓN PARA BUSCAR LAS TIENDAS EN SUPABASE
+  useEffect(() => {
+    async function fetchStores() {
+      try {
+        // Pedimos todas las tiendas a la tabla 'stores'
+        let { data, error } = await supabase
+          .from('stores')
+          .select('*');
+
+        if (error) {
+          console.error("Error al buscar tiendas:", error);
+        } else {
+          setStores(data); // Guardamos las tiendas reales en el estado
+        }
+      } catch (err) {
+        console.error("Error de conexión:", err);
+      } finally {
+        setIsLoading(false); // Terminamos de cargar
+      }
+    }
+
+    fetchStores();
+  }, []); // El array vacío significa que esto solo se ejecuta al abrir la página
 
   return (
     <div className="min-h-screen bg-[#faf9f8] text-slate-700 font-sans selection:bg-pink-200">
@@ -82,7 +103,7 @@ export default function Home() {
           </p>
         </section>
 
-        {/* NUEVA SECCIÓN: EXPLORA POR CATEGORÍAS */}
+        {/* SECCIÓN CATEGORÍAS (Sigue usando Mock Data por ahora) */}
         <section className="mb-24">
           <div className="flex items-center justify-between mb-10">
             <h2 className="text-2xl font-bold text-slate-800 flex items-center gap-3">Explora por Categorías</h2>
@@ -103,6 +124,7 @@ export default function Home() {
           </div>
         </section>
 
+        {/* SECCIÓN TIENDAS REALES DESDE SUPABASE */}
         <section className="mb-24">
           <div className="flex items-center justify-between mb-10">
             <h2 className="text-2xl font-bold text-slate-800 flex items-center gap-3">Tiendas que amamos</h2>
@@ -110,28 +132,37 @@ export default function Home() {
               Explorar todas <ArrowRight size={16} className="ml-1" />
             </Link>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-            {mockStores.map(store => (
-              <div key={store.id} className="bg-white rounded-[2rem] overflow-hidden flex flex-col group shadow-sm hover:shadow-xl transition-all duration-300 border border-slate-100">
-                {/* Z-20 MANTENIDO AQUÍ PARA EVITAR EL CORTE DEL AVATAR */}
-                <div className={`h-32 ${store.cover} w-full relative z-20 transition-transform duration-500 group-hover:scale-105`}>
-                  <div className="absolute -bottom-6 left-6 w-16 h-16 bg-white rounded-full flex items-center justify-center text-3xl shadow-sm border-4 border-white">
-                    {store.avatar}
+          
+          {isLoading ? (
+             <div className="text-center py-10 text-slate-400 font-medium">Buscando tiendas en Komorebi... 🌸</div>
+          ) : stores.length === 0 ? (
+             <div className="text-center py-10 bg-white rounded-3xl border border-slate-100 shadow-sm text-slate-500">
+                Aún no hay tiendas registradas. ¡Ve a Supabase y crea una!
+             </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+              {stores.map(store => (
+                <div key={store.id} className="bg-white rounded-[2rem] overflow-hidden flex flex-col group shadow-sm hover:shadow-xl transition-all duration-300 border border-slate-100">
+                  <div className={`h-32 ${store.cover_color} w-full relative z-20 transition-transform duration-500 group-hover:scale-105`}>
+                    <div className="absolute -bottom-6 left-6 w-16 h-16 bg-white rounded-full flex items-center justify-center text-3xl shadow-sm border-4 border-white">
+                      {store.avatar_icon}
+                    </div>
+                  </div>
+                  <div className="pt-10 pb-6 px-6 flex flex-col flex-1 bg-white relative z-10">
+                    <h3 className="font-bold text-lg text-slate-800 mb-1">{store.name}</h3>
+                    <p className="text-sm text-slate-500 mb-6">{store.type}</p>
+                    <div className="mt-auto flex items-center justify-between">
+                      <span className="flex items-center text-sm font-semibold text-slate-600"><Star size={16} className="text-yellow-400 fill-yellow-400 mr-1.5" /> {store.rating}</span>
+                      <Link to={`/tienda/${store.id}`} className="bg-slate-50 text-slate-700 px-4 py-2 rounded-full text-sm font-semibold group-hover:bg-pink-50 group-hover:text-pink-600 transition-colors">Visitar</Link>
+                    </div>
                   </div>
                 </div>
-                <div className="pt-10 pb-6 px-6 flex flex-col flex-1 bg-white relative z-10">
-                  <h3 className="font-bold text-lg text-slate-800 mb-1">{store.name}</h3>
-                  <p className="text-sm text-slate-500 mb-6">{store.type}</p>
-                  <div className="mt-auto flex items-center justify-between">
-                    <span className="flex items-center text-sm font-semibold text-slate-600"><Star size={16} className="text-yellow-400 fill-yellow-400 mr-1.5" /> {store.rating}</span>
-                    <Link to={`/tienda/${store.id}`} className="bg-slate-50 text-slate-700 px-4 py-2 rounded-full text-sm font-semibold group-hover:bg-pink-50 group-hover:text-pink-600 transition-colors">Visitar</Link>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </section>
 
+        {/* SECCIÓN TENDENCIAS (Sigue usando Mock Data por ahora) */}
         <section className="mb-24">
           <h2 className="text-2xl font-bold text-slate-800 mb-10 flex items-center gap-3">Tesoros del día</h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-6">

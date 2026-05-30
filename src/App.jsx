@@ -11,7 +11,7 @@ export default function App() {
   return (
     <CartProvider>
       <BrowserRouter>
-        <CartPanel /> 
+        <CartPanel />
         <Routes>
           <Route path="/" element={<Home />} />
           <Route path="/explorar-tiendas" element={<ExploreStores />} />
