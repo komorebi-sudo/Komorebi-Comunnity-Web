@@ -1,23 +1,23 @@
 import React from 'react';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
-// Asegúrate de que estos archivos existan en la carpeta src/pages
-import Home from './pages/Home';
-import StoreCatalog from './pages/StoreCatalog';
-import ExploreStores from './pages/ExploreStores';
-// Asegúrate de que estos archivos existan en src/context y src/components
-import { CartProvider } from './context/CartContext';
-import CartPanel from './components/CartPanel'; 
+import Home from './pages/Home.jsx';
+import StoreCatalog from './pages/StoreCatalog.jsx';
+import ExploreStores from './pages/ExploreStores.jsx';
+import Checkout from './pages/Checkout.jsx'; // Importamos la nueva página
+import { CartProvider } from './context/CartContext.jsx';
+import CartPanel from './components/CartPanel.jsx'; 
 
 export default function App() {
   return (
     <CartProvider>
       <BrowserRouter>
-        {/* El panel del carrito vive aquí, por encima de todas las rutas */}
         <CartPanel /> 
         <Routes>
           <Route path="/" element={<Home />} />
           <Route path="/explorar-tiendas" element={<ExploreStores />} />
           <Route path="/tienda/:storeId" element={<StoreCatalog />} />
+          {/* Añadimos la ruta para el Checkout */}
+          <Route path="/checkout" element={<Checkout />} />
         </Routes>
       </BrowserRouter>
     </CartProvider>
