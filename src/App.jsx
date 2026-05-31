@@ -15,7 +15,7 @@ export default function App() {
         <Routes>
           <Route path="/" element={<Home />} />
           <Route path="/explorar-tiendas" element={<ExploreStores />} />
-          <Route path="/tienda/:storeId" element={<StoreCatalog />} />
+          <Route path="/Tienda/:storeSlug" element={<StoreCatalog />} />
           {/* Añadimos la ruta para el Checkout */}
           <Route path="/checkout" element={<Checkout />} />
         </Routes>
