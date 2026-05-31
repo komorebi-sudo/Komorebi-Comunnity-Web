@@ -1,20 +1,35 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Search, ShoppingBag, User, Store, Star, ArrowLeft } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useCart } from '../context/CartContext'; 
-
-const mockStores = [
-  { id: 1, name: "Sakura Treats", type: "Snacks", rating: 4.9, cover: "bg-pink-100", avatar: "🌸" },
-  { id: 2, name: "Pixel Cozy", type: "Tecnología", rating: 4.8, cover: "bg-blue-100", avatar: "☁️" },
-  { id: 3, name: "Matcha Books", type: "Manga", rating: 4.7, cover: "bg-emerald-100", avatar: "🍵" },
-  { id: 4, name: "Starlight", type: "Ropa", rating: 4.9, cover: "bg-purple-100", avatar: "✨" },
-  { id: 5, name: "Gacha Planet", type: "Coleccionables", rating: 4.6, cover: "bg-orange-100", avatar: "🧸" },
-  { id: 6, name: "Noodle Hub", type: "Snacks", rating: 4.8, cover: "bg-red-100", avatar: "🍜" },
-];
+import { supabase } from '../lib/supabaseClient'; // Conectamos Supabase
 
 export default function ExploreStores() {
   const { getCartCount, toggleCart } = useCart();
   const cartCount = getCartCount();
+
+  // Estados para manejar los datos de la base de datos
+  const [stores, setStores] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    async function fetchStores() {
+      try {
+        let { data, error } = await supabase
+          .from('stores')
+          .select('*');
+
+        if (error) throw error;
+        setStores(data || []);
+      } catch (err) {
+        console.error("Error al cargar el directorio de tiendas:", err.message);
+      } finally {
+        setIsLoading(false);
+      }
+    }
+
+    fetchStores();
+  }, []);
 
   return (
     <div className="min-h-screen bg-[#faf9f8] text-slate-700 font-sans selection:bg-pink-200">
@@ -42,23 +57,38 @@ export default function ExploreStores() {
             <p className="text-slate-500 mt-2">Explora y descubre tus nuevos creadores favoritos.</p>
           </div>
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-          {mockStores.map(store => (
-            <div key={store.id} className="bg-white rounded-[2rem] overflow-hidden flex flex-col group shadow-sm hover:shadow-xl transition-all duration-300 border border-slate-100">
-              <div className={`h-28 ${store.cover} w-full relative transition-transform duration-500 group-hover:scale-105`}>
-                <div className="absolute -bottom-6 left-6 w-16 h-16 bg-white rounded-full flex items-center justify-center text-3xl shadow-sm border-4 border-white">{store.avatar}</div>
-              </div>
-              <div className="pt-10 pb-6 px-6 flex flex-col flex-1 bg-white relative z-10">
-                <h3 className="font-bold text-lg text-slate-800 mb-1">{store.name}</h3>
-                <p className="text-sm text-slate-500 mb-6">{store.type}</p>
-                <div className="mt-auto flex items-center justify-between">
-                  <span className="flex items-center text-sm font-semibold text-slate-600"><Star size={16} className="text-yellow-400 fill-yellow-400 mr-1.5" /> {store.rating}</span>
-                  <Link to={`/tienda/${store.id}`} className="bg-slate-50 text-slate-700 px-4 py-2 rounded-full text-sm font-semibold group-hover:bg-pink-50 group-hover:text-pink-600 transition-colors">Visitar</Link>
+
+        {isLoading ? (
+          <div className="text-center py-20 text-slate-400 font-medium flex flex-col items-center">
+            <Store className="animate-bounce mb-4 text-pink-400" size={32} />
+            Cargando el directorio...
+          </div>
+        ) : stores.length === 0 ? (
+          <div className="text-center py-20 bg-white rounded-3xl border border-slate-100 shadow-sm text-slate-500">
+            Aún no hay tiendas registradas en el directorio.
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+            {stores.map(store => (
+              <div key={store.id} className="bg-white rounded-[2rem] overflow-hidden flex flex-col group shadow-sm hover:shadow-xl transition-all duration-300 border border-slate-100">
+                <div className={`h-28 ${store.cover_color || 'bg-slate-100'} w-full relative z-20 transition-transform duration-500 group-hover:scale-105`}>
+                  <div className="absolute -bottom-6 left-6 w-16 h-16 bg-white rounded-full flex items-center justify-center text-3xl shadow-sm border-4 border-white">
+                    {store.avatar_icon || '🏪'}
+                  </div>
+                </div>
+                <div className="pt-10 pb-6 px-6 flex flex-col flex-1 bg-white relative z-10">
+                  <h3 className="font-bold text-lg text-slate-800 mb-1">{store.name}</h3>
+                  <p className="text-sm text-slate-500 mb-6">{store.type}</p>
+                  <div className="mt-auto flex items-center justify-between">
+                    <span className="flex items-center text-sm font-semibold text-slate-600"><Star size={16} className="text-yellow-400 fill-yellow-400 mr-1.5" /> {store.rating || 5.0}</span>
+                    {/* AQUÍ ESTÁ EL CAMBIO IMPORTANTE: store.slug */}
+                    <Link to={`/tienda/${store.slug}`} className="bg-slate-50 text-slate-700 px-4 py-2 rounded-full text-sm font-semibold group-hover:bg-pink-50 group-hover:text-pink-600 transition-colors">Visitar</Link>
+                  </div>
                 </div>
               </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
       </main>
     </div>
   );

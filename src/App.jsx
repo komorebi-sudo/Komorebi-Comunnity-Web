@@ -1,25 +1,31 @@
 import React from 'react';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
-import Home from './pages/Home.jsx';
-import StoreCatalog from './pages/StoreCatalog.jsx';
-import ExploreStores from './pages/ExploreStores.jsx';
-import Checkout from './pages/Checkout.jsx'; // Importamos la nueva página
-import { CartProvider } from './context/CartContext.jsx';
-import CartPanel from './components/CartPanel.jsx'; 
+import Home from './pages/Home';
+import StoreCatalog from './pages/StoreCatalog';
+import ExploreStores from './pages/ExploreStores';
+import Checkout from './pages/Checkout';
+import ProductDetail from './pages/ProductDetail';
+import Favorites from './pages/Favorites'; // 1. Importamos la página
+import { CartProvider } from './context/CartContext';
+import { FavoritesProvider } from './context/FavoritesContext'; // 2. Importamos el contexto
+import CartPanel from './components/CartPanel'; 
 
 export default function App() {
   return (
-    <CartProvider>
-      <BrowserRouter>
-        <CartPanel />
-        <Routes>
-          <Route path="/" element={<Home />} />
-          <Route path="/explorar-tiendas" element={<ExploreStores />} />
-          <Route path="/Tienda/:storeSlug" element={<StoreCatalog />} />
-          {/* Añadimos la ruta para el Checkout */}
-          <Route path="/checkout" element={<Checkout />} />
-        </Routes>
-      </BrowserRouter>
-    </CartProvider>
+    <FavoritesProvider> {/* 3. Envolvemos la app en el FavoritesProvider */}
+      <CartProvider>
+        <BrowserRouter>
+          <CartPanel /> 
+          <Routes>
+            <Route path="/" element={<Home />} />
+            <Route path="/explorar-tiendas" element={<ExploreStores />} />
+            <Route path="/tienda/:storeSlug" element={<StoreCatalog />} />
+            <Route path="/producto/:productSlug" element={<ProductDetail />} />
+            <Route path="/checkout" element={<Checkout />} />
+            <Route path="/favoritos" element={<Favorites />} /> {/* 4. Añadimos la ruta */}
+          </Routes>
+        </BrowserRouter>
+      </CartProvider>
+    </FavoritesProvider>
   );
 }
