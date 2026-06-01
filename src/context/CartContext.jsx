@@ -16,8 +16,6 @@ export function CartProvider({ children }) {
       }
       return [...prevCart, { ...product, quantity: 1 }];
     });
-    // Abrir el carrito automáticamente al añadir algo (opcional, pero buena UX)
-    setIsCartOpen(true);
   };
 
   const removeFromCart = (productId) => {

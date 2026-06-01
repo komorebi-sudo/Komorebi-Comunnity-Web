@@ -1,11 +1,11 @@
 import React, { useEffect, useState } from 'react';
 import { Search, ShoppingBag, User, Store, ArrowRight, Star, BookOpen, Shirt, Sparkles, Heart, Gamepad2, Coffee, Palette, Loader2 } from 'lucide-react';
-import { Link } from 'react-router-dom';
 import { useCart } from '../context/CartContext'; 
 import { useFavorites } from '../context/FavoritesContext';
 import { supabase } from '../lib/supabaseClient';
 // 1. IMPORTAMOS LA NUEVA VENTANITA
-import QuickAddPopover from '../components/QuickAddPopover'; 
+import QuickAddPopover from '../components/QuickAddPopover';
+import { Link, useNavigate } from 'react-router-dom'; 
 
 const mockCategoriesGrid = [
   { id: 1, name: "Snacks & Dulces", count: "12 tiendas", Icon: Coffee, color: "bg-pink-100", textColor: "text-pink-600" },
@@ -20,6 +20,17 @@ export default function Home() {
   const { getCartCount, toggleCart, addToCart } = useCart();
   const cartCount = getCartCount();
   const { favorites } = useFavorites();
+
+  const navigate = useNavigate();
+  const [searchTerm, setSearchTerm] = useState('');
+
+  const handleSearch = (e) => {
+    e.preventDefault();
+    if (searchTerm.trim()) {
+      // Enviamos al cliente a la nueva ruta con su búsqueda en la URL
+      navigate(`/buscar?q=${encodeURIComponent(searchTerm)}`);
+    }
+  };
   
   // 2. AHORA GUARDAMOS EL ID DEL PRODUCTO ABIERTO, NO EL OBJETO
   const [openPopoverId, setOpenPopoverId] = useState(null);
@@ -59,23 +70,36 @@ export default function Home() {
     <div className="min-h-screen bg-[#faf9f8] text-slate-700 font-sans selection:bg-pink-200">
       
       <header className="bg-[#faf9f8]/80 backdrop-blur-xl sticky top-0 z-40 border-b border-slate-100">
-        <div className="max-w-6xl mx-auto px-6 h-20 flex items-center justify-between">
-          <div className="flex items-center space-x-3 cursor-pointer">
-            <div className="w-10 h-10 bg-pink-100 rounded-[1rem] flex items-center justify-center text-pink-500">
-              <Store size={22} strokeWidth={2.5} />
-            </div>
-            <div className="text-xl font-bold tracking-tight text-slate-800">
-              Komorebi
-            </div>
-          </div>
-          <div className="hidden md:flex flex-1 max-w-md mx-8">
-            <div className="flex w-full bg-white rounded-full px-4 py-2.5 items-center shadow-sm border border-slate-100 focus-within:border-pink-200 focus-within:ring-4 focus-within:ring-pink-50 transition-all">
-              <Search className="text-slate-400 mr-3" size={18} />
-              <input type="text" placeholder="Busca tiendas o productos..." className="flex-1 bg-transparent border-none focus:outline-none text-sm placeholder:text-slate-400" />
-            </div>
-          </div>
+        <div className="max-w-6xl mx-auto px-6 h-20 flex items-center">
           
-          <div className="flex items-center space-x-3">
+          {/* LADO IZQUIERDO: flex-1 para que ocupe 1/3 del espacio */}
+          <div className="flex items-center space-x-3 flex-1">
+            <Link to="/" className="flex items-center space-x-3 cursor-pointer group">
+              <div className="w-10 h-10 bg-pink-100 rounded-[1rem] flex items-center justify-center text-pink-500 group-hover:scale-105 transition-transform">
+                <Store size={22} strokeWidth={2.5} />
+              </div>
+              <div className="text-xl font-bold tracking-tight text-slate-800">
+                Komorebi
+              </div>
+            </Link>
+          </div>
+
+          {/* CENTRO: Se expande pero con un máximo, y se centra perfectamente */}
+          <div className="hidden md:flex justify-center flex-[2] max-w-lg px-4">
+            <form onSubmit={handleSearch} className="flex w-full bg-white rounded-full px-4 py-2.5 items-center shadow-sm border border-slate-100 focus-within:border-pink-200 focus-within:ring-4 focus-within:ring-pink-50 transition-all">
+              <Search className="text-slate-400 mr-3" size={18} />
+              <input 
+                type="text" 
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                placeholder="Busca tiendas o productos..." 
+                className="flex-1 bg-transparent border-none focus:outline-none text-sm placeholder:text-slate-400" 
+              />
+            </form>
+          </div>
+
+          {/* LADO DERECHO: flex-1 para equilibrar, pero con justify-end para empujar los iconos a la orilla */}
+          <div className="flex items-center justify-end space-x-3 flex-1">
             <Link to="/favoritos" className="p-2.5 bg-white rounded-full shadow-sm hover:shadow-md transition-shadow relative text-slate-600">
               <Heart size={20} />
               {favorites.length > 0 && (
@@ -85,7 +109,7 @@ export default function Home() {
               )}
             </Link>
 
-            <button onClick={toggleCart} className="p-2.5 bg-white rounded-full shadow-sm hover:shadow-md transition-shadow relative text-slate-600">
+            <button id="cart-header-icon" onClick={toggleCart} className="p-2.5 bg-white rounded-full shadow-sm hover:shadow-md transition-all duration-300 relative text-slate-600">
               <ShoppingBag size={20} />
               {cartCount > 0 && (
                 <span className="absolute -top-1 -right-1 bg-pink-400 text-white text-[10px] font-bold h-5 w-5 rounded-full flex items-center justify-center shadow-sm">
@@ -98,6 +122,7 @@ export default function Home() {
               <User size={16} /><span>Entrar</span>
             </Link>
           </div>
+
         </div>
       </header>
 
@@ -203,7 +228,7 @@ export default function Home() {
                       <Heart size={18} />
                     </button>
                     
-                    <Link to={`/producto/${product.slug}`} className={`${product.bg_color || 'bg-slate-50'} h-48 rounded-[1.5rem] relative overflow-hidden flex items-center justify-center text-7xl mb-5 transition-transform duration-500 group-hover:scale-95`}>
+                    <Link id={`product-image-${product.id}`} to={`/producto/${product.slug}`} className={`${product.bg_color || 'bg-slate-50'} h-48 rounded-[1.5rem] relative overflow-hidden flex items-center justify-center text-7xl mb-5 transition-transform duration-500 group-hover:scale-95`}>
                       {product.icon || '📦'}
                       
                       {productStore && (
