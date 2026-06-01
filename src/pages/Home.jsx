@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Search, ShoppingBag, User, Store, ArrowRight, Star, BookOpen, Shirt, Sparkles, Heart, Gamepad2, Coffee, Palette } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useCart } from '../context/CartContext'; 
+import { useFavorites } from '../context/FavoritesContext'; // 1. IMPORTAMOS EL CONTEXTO
 import { supabase } from '../lib/supabaseClient'; 
 
 const mockCategoriesGrid = [
@@ -24,25 +25,23 @@ export default function Home() {
   const { getCartCount, toggleCart, addToCart } = useCart();
   const cartCount = getCartCount();
   
+  // 2. EXTRAEMOS LA LISTA DE FAVORITOS
+  const { favorites } = useFavorites();
+  
   const [stores, setStores] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     async function fetchStores() {
       try {
-        console.log("Intentando conectar a Supabase..."); // <-- MENSAJE DE DIAGNÓSTICO
         let { data, error } = await supabase
           .from('stores')
           .select('*');
 
-        if (error) {
-          console.error("Error al buscar tiendas (Supabase Error):", error.message); // <-- MUSTRA EL ERROR REAL
-        } else {
-          console.log("Tiendas recibidas de Supabase:", data); // <-- MUESTRA LOS DATOS
-          setStores(data || []); 
-        }
+        if (error) throw error;
+        setStores(data || []); 
       } catch (err) {
-        console.error("Error de conexión (Network):", err);
+        console.error("Error de conexión:", err);
       } finally {
         setIsLoading(false); 
       }
@@ -70,6 +69,17 @@ export default function Home() {
             </div>
           </div>
           <div className="flex items-center space-x-3">
+            
+            {/* 3. NUEVO BOTÓN DE FAVORITOS */}
+            <Link to="/favoritos" className="p-2.5 bg-white rounded-full shadow-sm hover:shadow-md transition-shadow relative text-slate-600">
+              <Heart size={20} />
+              {favorites.length > 0 && (
+                <span className="absolute -top-1 -right-1 bg-pink-400 text-white text-[10px] font-bold h-5 w-5 rounded-full flex items-center justify-center shadow-sm">
+                  {favorites.length}
+                </span>
+              )}
+            </Link>
+
             <button onClick={toggleCart} className="p-2.5 bg-white rounded-full shadow-sm hover:shadow-md transition-shadow relative text-slate-600">
               <ShoppingBag size={20} />
               {cartCount > 0 && (
@@ -78,9 +88,9 @@ export default function Home() {
                 </span>
               )}
             </button>
-            <button className="hidden sm:flex items-center space-x-2 bg-slate-800 text-white px-5 py-2.5 rounded-full text-sm font-semibold hover:bg-slate-700 transition-colors shadow-sm">
-              <User size={16} /><span>Entrar</span>
-            </button>
+            <Link to="/login" className="hidden sm:flex items-center space-x-2 bg-slate-800 text-white px-5 py-2.5 rounded-full text-sm font-semibold hover:bg-slate-700 transition-colors shadow-sm">
+            <User size={16} /><span>Entrar</span>
+            </Link>
           </div>
         </div>
       </header>
@@ -142,10 +152,8 @@ export default function Home() {
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
               {stores.map(store => (
                 <div key={store.id} className="bg-white rounded-[2rem] overflow-hidden flex flex-col group shadow-sm hover:shadow-xl transition-all duration-300 border border-slate-100">
-                  {/* Corregido: cover_color es lo que definimos en la DB */}
                   <div className={`h-32 ${store.cover_color || 'bg-slate-100'} w-full relative z-20 transition-transform duration-500 group-hover:scale-105`}>
                     <div className="absolute -bottom-6 left-6 w-16 h-16 bg-white rounded-full flex items-center justify-center text-3xl shadow-sm border-4 border-white">
-                      {/* Corregido: avatar_icon es lo que definimos en la DB */}
                       {store.avatar_icon || '🏪'}
                     </div>
                   </div>
@@ -154,7 +162,7 @@ export default function Home() {
                     <p className="text-sm text-slate-500 mb-6">{store.type}</p>
                     <div className="mt-auto flex items-center justify-between">
                       <span className="flex items-center text-sm font-semibold text-slate-600"><Star size={16} className="text-yellow-400 fill-yellow-400 mr-1.5" /> {store.rating || 5.0}</span>
-                      <Link to={`/Tienda/${store.slug}`} className="bg-slate-50 text-slate-700 px-4 py-2 rounded-full text-sm font-semibold group-hover:bg-pink-50 group-hover:text-pink-600 transition-colors">Visitar</Link>
+                      <Link to={`/tienda/${store.slug}`} className="bg-slate-50 text-slate-700 px-4 py-2 rounded-full text-sm font-semibold group-hover:bg-pink-50 group-hover:text-pink-600 transition-colors">Visitar</Link>
                     </div>
                   </div>
                 </div>

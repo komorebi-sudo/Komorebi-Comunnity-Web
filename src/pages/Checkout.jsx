@@ -29,6 +29,35 @@ export default function Checkout() {
     }, 2000);
   };
 
+  // ----------------------------------------------------------------------
+  // LA MAGIA VISUAL: Agrupamos los productos del carrito por su ID original
+  // ----------------------------------------------------------------------
+  const groupedCart = Object.values(cart.reduce((acc, item) => {
+    // Usamos el originalId (el de la base de datos) o el id normal si no tiene variantes
+    const baseId = item.originalId || item.id;
+    
+    if (!acc[baseId]) {
+      // Si es la primera vez que vemos este producto, creamos su "caja"
+      acc[baseId] = {
+        ...item,
+        id: baseId,
+        totalQuantity: 0,
+        variantList: [] // Aquí guardaremos: [{ name: '40x40cm', qty: 2 }]
+      };
+    }
+    
+    // Sumamos la cantidad al total general de este producto
+    acc[baseId].totalQuantity += item.quantity;
+
+    // Si este ítem específico tiene variantes, lo añadimos a la sub-lista
+    if (item.selectedOptions && Object.keys(item.selectedOptions).length > 0) {
+      const variantString = Object.values(item.selectedOptions).join(' • ');
+      acc[baseId].variantList.push({ name: variantString, qty: item.quantity });
+    }
+
+    return acc;
+  }, {}));
+
   return (
     <div className="min-h-screen bg-[#faf9f8] text-slate-700 font-sans selection:bg-pink-200 pb-24">
       <header className="bg-white border-b border-slate-100 sticky top-0 z-50">
@@ -97,18 +126,36 @@ export default function Checkout() {
             <div className="bg-white p-6 rounded-[2rem] shadow-sm border border-slate-100 sticky top-28">
               <h3 className="font-bold text-lg text-slate-800 mb-6">Resumen del Pedido</h3>
               <div className="space-y-4 mb-6 max-h-[40vh] overflow-y-auto pr-2">
-                {cart.map((item) => (
-                  <div key={item.id} className="flex gap-4 items-center">
-                    <div className={`${item.bgColor || 'bg-slate-100'} w-14 h-14 rounded-lg flex items-center justify-center text-2xl`}>
+                
+                {/* AHORA ITERAMOS SOBRE EL CARRITO AGRUPADO (groupedCart) */}
+                {groupedCart.map((item) => (
+                  <div key={item.id} className="flex gap-4 items-start">
+                    <div className={`${item.bg_color || 'bg-slate-100'} w-14 h-14 rounded-lg flex items-center justify-center text-2xl flex-shrink-0`}>
                       {item.icon}
                     </div>
-                    <div className="flex-1">
-                      <h4 className="font-semibold text-slate-800 text-sm">{item.name}</h4>
-                      <p className="text-xs text-slate-500">Cant: {item.quantity}</p>
+                    <div className="flex-1 min-w-0">
+                      <h4 className="font-semibold text-slate-800 text-sm truncate">{item.name}</h4>
+                      
+                      {/* Si NO tiene variantes, mostramos la cantidad normal */}
+                      {item.variantList.length === 0 ? (
+                        <p className="text-xs text-slate-500 mt-0.5">Cant: {item.totalQuantity}</p>
+                      ) : (
+                        /* Si SÍ tiene variantes, mostramos la lista detallada */
+                        <div className="mt-1 space-y-1">
+                          {item.variantList.map((variant, index) => (
+                            <p key={index} className="text-xs text-slate-500 bg-slate-50 px-2 py-1 rounded-md inline-block mr-1 mb-1">
+                              <span className="font-semibold text-slate-700">{variant.name}:</span> {variant.qty}
+                            </p>
+                          ))}
+                        </div>
+                      )}
                     </div>
-                    <span className="font-bold text-sm text-slate-800">${item.price * item.quantity}</span>
+                    <span className="font-bold text-sm text-slate-800 flex-shrink-0">
+                      ${item.price * item.totalQuantity}
+                    </span>
                   </div>
                 ))}
+                
               </div>
               <div className="border-t border-slate-100 pt-4 space-y-3">
                 <div className="flex justify-between text-sm text-slate-500">

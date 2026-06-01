@@ -2,19 +2,24 @@ import React, { useEffect, useState } from 'react';
 import { Search, Heart, ShoppingBag, User, Store, ArrowLeft, SlidersHorizontal, ChevronDown } from 'lucide-react';
 import { useParams, Link } from 'react-router-dom';
 import { useCart } from '../context/CartContext';
+import { useFavorites } from '../context/FavoritesContext'; // 1. IMPORTAMOS FAVORITOS
 import { supabase } from '../lib/supabaseClient';
 
 export default function StoreCatalog() {
   const { storeSlug } = useParams(); 
   const { addToCart, toggleCart, getCartCount } = useCart();
   const cartCount = getCartCount();
+  
+  // 2. EXTRAEMOS LAS FUNCIONES DE FAVORITOS
+  const { toggleFavorite, isFavorite } = useFavorites();
 
   const [store, setStore] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  // ESTADOS PARA BÚSQUEDA Y FILTROS DESPLEGABLES
   const [searchTerm, setSearchTerm] = useState('');
   const [activeFilter, setActiveFilter] = useState('todos');
+
+  const { favorites } = useFavorites();
 
   useEffect(() => {
     async function fetchStoreAndProducts() {
@@ -55,18 +60,14 @@ export default function StoreCatalog() {
     );
   }
 
-  // LÓGICA DE FILTRADO Y ORDENAMIENTO AVANZADO
-  // 1. Primero copiamos los productos para no modificar los originales
   let processedProducts = [...(store.products || [])];
 
-  // 2. Aplicamos la búsqueda por texto si hay algo escrito
   if (searchTerm) {
     processedProducts = processedProducts.filter(product =>
       product.name.toLowerCase().includes(searchTerm.toLowerCase())
     );
   }
 
-  // 3. Aplicamos el filtro u ordenamiento seleccionado en el menú
   switch (activeFilter) {
     case 'destacados':
       processedProducts = processedProducts.filter(p => p.is_trending === true);
@@ -87,14 +88,11 @@ export default function StoreCatalog() {
       processedProducts.sort((a, b) => b.name.localeCompare(a.name));
       break;
     default:
-      // 'todos' - se queda tal cual
       break;
   }
 
   return (
     <div className="min-h-screen bg-[#faf9f8] text-slate-700 font-sans pb-12 selection:bg-pink-200">
-      
-      {/* CABECERA */}
       <header className="bg-[#faf9f8]/80 backdrop-blur-xl sticky top-0 z-50 border-b border-slate-100">
         <div className="max-w-6xl mx-auto px-6 h-20 flex items-center justify-between">
           <Link to="/" className="flex items-center space-x-3 group">
@@ -105,8 +103,15 @@ export default function StoreCatalog() {
               Komorebi
             </div>
           </Link>
-
           <div className="flex items-center space-x-3">
+            <Link to="/favoritos" className="p-2.5 bg-white rounded-full shadow-sm hover:shadow-md transition-shadow relative text-slate-600">
+              <Heart size={20} />
+              {favorites.length > 0 && (
+                <span className="absolute -top-1 -right-1 bg-pink-400 text-white text-[10px] font-bold h-5 w-5 rounded-full flex items-center justify-center shadow-sm">
+                  {favorites.length}
+                </span>
+              )}
+            </Link>
             <button onClick={toggleCart} className="p-2.5 bg-white rounded-full shadow-sm hover:shadow-md transition-shadow relative text-slate-600">
               <ShoppingBag size={20} />
               {cartCount > 0 && (
@@ -115,15 +120,13 @@ export default function StoreCatalog() {
                 </span>
               )}
             </button>
-            <button className="hidden sm:flex items-center space-x-2 bg-slate-800 text-white px-5 py-2.5 rounded-full text-sm font-semibold hover:bg-slate-700 transition-colors shadow-sm">
-              <User size={16} />
-              <span>Entrar</span>
-            </button>
+            <Link to="/login" className="hidden sm:flex items-center space-x-2 bg-slate-800 text-white px-5 py-2.5 rounded-full text-sm font-semibold hover:bg-slate-700 transition-colors shadow-sm">
+  <User size={16} /><span>Entrar</span>
+</Link>
           </div>
         </div>
       </header>
 
-      {/* BANNER DE LA TIENDA */}
       <div className={`w-full h-40 ${store.cover_color || 'bg-slate-100'} border-b border-slate-100 relative`}>
         <div className="max-w-6xl mx-auto px-6 h-full flex items-end pb-6 relative">
            <Link to="/" className="absolute top-6 left-6 flex items-center bg-white/60 backdrop-blur-md px-3 py-1.5 rounded-full text-xs font-semibold hover:bg-white transition-colors text-slate-700 shadow-sm">
@@ -132,10 +135,7 @@ export default function StoreCatalog() {
         </div>
       </div>
 
-      {/* CONTENIDO PRINCIPAL */}
       <main className="max-w-6xl mx-auto px-6 flex flex-col md:flex-row gap-10 relative -mt-12">
-        
-        {/* SIDEBAR IZQUIERDO (Info de la tienda) */}
         <aside className="w-full md:w-72 flex-shrink-0">
           <div className="bg-white rounded-[2rem] p-6 shadow-sm border border-slate-100 mb-8 text-center relative pt-14">
             <div className="absolute -top-10 left-1/2 -translate-x-1/2 w-20 h-20 bg-white rounded-full flex items-center justify-center text-4xl shadow-sm border-4 border-white">
@@ -146,32 +146,22 @@ export default function StoreCatalog() {
           </div>
         </aside>
 
-        {/* ÁREA DE PRODUCTOS */}
         <section className="flex-1 mt-4 md:mt-12">
-          
-          {/* BARRA DE BÚSQUEDA Y MENÚ DESPLEGABLE */}
           {store.products && store.products.length > 0 && (
             <div className="flex flex-col sm:flex-row gap-4 mb-8">
-              {/* Buscador */}
               <div className="flex-1 relative">
                 <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
                 <input 
-                  type="text" 
-                  placeholder={`Buscar en ${store.name}...`} 
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
+                  type="text" placeholder={`Buscar en ${store.name}...`} value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)}
                   className="w-full pl-11 pr-4 py-3 rounded-full bg-white border border-slate-100 focus:outline-none focus:border-pink-200 focus:ring-4 focus:ring-pink-50 transition-all text-sm font-medium text-slate-700 placeholder:text-slate-400 shadow-sm"
                 />
               </div>
-              
-              {/* Menú Desplegable (Dropdown) */}
               <div className="relative w-full sm:w-64 flex-shrink-0 group">
                 <div className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none group-focus-within:text-pink-500 transition-colors">
                   <SlidersHorizontal size={16} />
                 </div>
                 <select
-                  value={activeFilter}
-                  onChange={(e) => setActiveFilter(e.target.value)}
+                  value={activeFilter} onChange={(e) => setActiveFilter(e.target.value)}
                   className="w-full pl-11 pr-10 py-3 bg-white border border-slate-100 text-slate-700 text-sm font-bold rounded-full appearance-none focus:outline-none focus:border-pink-200 focus:ring-4 focus:ring-pink-50 shadow-sm cursor-pointer transition-all"
                 >
                   <option value="todos">Todos los productos</option>
@@ -189,7 +179,6 @@ export default function StoreCatalog() {
             </div>
           )}
 
-          {/* CUADRÍCULA DE PRODUCTOS (Usa processedProducts) */}
           {(!store.products || store.products.length === 0) ? (
             <div className="bg-white p-8 rounded-3xl border border-slate-100 text-center text-slate-500 shadow-sm">
               Esta tienda aún no ha publicado productos. 🌸
@@ -199,10 +188,7 @@ export default function StoreCatalog() {
               <Search size={48} className="text-slate-200 mb-4" />
               <h3 className="text-lg font-bold text-slate-800 mb-2">No encontramos nada</h3>
               <p>No hay productos que coincidan con tu búsqueda o filtro.</p>
-              <button 
-                onClick={() => { setSearchTerm(''); setActiveFilter('todos'); }} 
-                className="mt-6 text-pink-500 font-bold hover:underline"
-              >
+              <button onClick={() => { setSearchTerm(''); setActiveFilter('todos'); }} className="mt-6 text-pink-500 font-bold hover:underline">
                 Limpiar filtros
               </button>
             </div>
@@ -211,6 +197,21 @@ export default function StoreCatalog() {
               {processedProducts.map((product) => (
                 <div key={product.id} className="bg-white rounded-[2rem] p-5 flex flex-col relative group shadow-sm hover:shadow-xl transition-all duration-300 border border-slate-100">
                   
+                  {/* 3. BOTÓN DE FAVORITOS (CORAZÓN) */}
+                  <button 
+                    onClick={(e) => {
+                      e.preventDefault(); // <-- Magia: previene que entres a la página del producto al darle al corazón
+                      toggleFavorite(product);
+                    }}
+                    className={`absolute top-4 right-4 z-10 p-2 rounded-full backdrop-blur-sm shadow-sm transition-all ${
+                      isFavorite(product.id) 
+                        ? 'bg-white text-pink-500' // Está en favoritos
+                        : 'bg-white/50 text-slate-400 hover:bg-white hover:text-pink-500 opacity-0 group-hover:opacity-100' // No está
+                    }`}
+                  >
+                    <Heart size={18} className={isFavorite(product.id) ? "fill-pink-500" : ""} />
+                  </button>
+
                   {product.badge && (
                     <span className="absolute top-4 left-4 z-10 bg-white/90 backdrop-blur-sm text-slate-800 text-[10px] font-extrabold px-2 py-1 rounded-full shadow-sm tracking-wider uppercase">
                       {product.badge}

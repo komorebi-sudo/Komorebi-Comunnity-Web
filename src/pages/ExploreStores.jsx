@@ -1,12 +1,14 @@
 import React, { useEffect, useState } from 'react';
-import { Search, ShoppingBag, User, Store, Star, ArrowLeft } from 'lucide-react';
+import { Search, ShoppingBag, User, Store, Star, ArrowLeft, Heart } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useCart } from '../context/CartContext'; 
 import { supabase } from '../lib/supabaseClient'; // Conectamos Supabase
+import { useFavorites } from '../context/FavoritesContext';
 
 export default function ExploreStores() {
   const { getCartCount, toggleCart } = useCart();
   const cartCount = getCartCount();
+  const { favorites } = useFavorites();
 
   // Estados para manejar los datos de la base de datos
   const [stores, setStores] = useState([]);
@@ -40,11 +42,21 @@ export default function ExploreStores() {
             <div className="text-xl font-bold tracking-tight text-slate-800">Komorebi</div>
           </Link>
           <div className="flex items-center space-x-3">
+            <Link to="/favoritos" className="p-2.5 bg-white rounded-full shadow-sm hover:shadow-md transition-shadow relative text-slate-600">
+  <Heart size={20} />
+  {favorites.length > 0 && (
+    <span className="absolute -top-1 -right-1 bg-pink-400 text-white text-[10px] font-bold h-5 w-5 rounded-full flex items-center justify-center shadow-sm">
+      {favorites.length}
+    </span>
+  )}
+</Link>
             <button onClick={toggleCart} className="p-2.5 bg-white rounded-full shadow-sm hover:shadow-md transition-shadow relative text-slate-600">
               <ShoppingBag size={20} />
               {cartCount > 0 && <span className="absolute -top-1 -right-1 bg-pink-400 text-white text-[10px] font-bold h-5 w-5 rounded-full flex items-center justify-center shadow-sm">{cartCount}</span>}
             </button>
-            <button className="hidden sm:flex items-center space-x-2 bg-slate-800 text-white px-5 py-2.5 rounded-full text-sm font-semibold hover:bg-slate-700 transition-colors shadow-sm"><User size={16} /><span>Entrar</span></button>
+            <Link to="/login" className="hidden sm:flex items-center space-x-2 bg-slate-800 text-white px-5 py-2.5 rounded-full text-sm font-semibold hover:bg-slate-700 transition-colors shadow-sm">
+  <User size={16} /><span>Entrar</span>
+</Link>
           </div>
         </div>
       </header>
