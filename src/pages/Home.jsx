@@ -1,9 +1,11 @@
 import React, { useEffect, useState } from 'react';
-import { Search, ShoppingBag, User, Store, ArrowRight, Star, BookOpen, Shirt, Sparkles, Heart, Gamepad2, Coffee, Palette } from 'lucide-react';
+import { Search, ShoppingBag, User, Store, ArrowRight, Star, BookOpen, Shirt, Sparkles, Heart, Gamepad2, Coffee, Palette, Loader2 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useCart } from '../context/CartContext'; 
-import { useFavorites } from '../context/FavoritesContext'; // 1. IMPORTAMOS EL CONTEXTO
-import { supabase } from '../lib/supabaseClient'; 
+import { useFavorites } from '../context/FavoritesContext';
+import { supabase } from '../lib/supabaseClient';
+// 1. IMPORTAMOS LA NUEVA VENTANITA
+import QuickAddPopover from '../components/QuickAddPopover'; 
 
 const mockCategoriesGrid = [
   { id: 1, name: "Snacks & Dulces", count: "12 tiendas", Icon: Coffee, color: "bg-pink-100", textColor: "text-pink-600" },
@@ -14,45 +16,49 @@ const mockCategoriesGrid = [
   { id: 6, name: "Arte & Papelería", count: "18 tiendas", Icon: Palette, color: "bg-rose-100", textColor: "text-rose-600" },
 ];
 
-const mockTrending = [
-  { id: 1, name: 'Pocky Fresa Edición Limitada', price: 4, store: 'Sakura Treats', bgColor: 'bg-pink-50', icon: '🍓' },
-  { id: 2, name: 'Taza Nube Cerámica', price: 12, store: 'Pixel Cozy', bgColor: 'bg-blue-50', icon: '☕' },
-  { id: 3, name: 'Set de Papelería Ghibli', price: 15, store: 'Matcha Books', bgColor: 'bg-emerald-50', icon: '📝' },
-  { id: 4, name: 'Sweater Oversize Pastel', price: 25, store: 'Starlight', bgColor: 'bg-purple-50', icon: '🎀' },
-];
-
 export default function Home() {
   const { getCartCount, toggleCart, addToCart } = useCart();
   const cartCount = getCartCount();
-  
-  // 2. EXTRAEMOS LA LISTA DE FAVORITOS
   const { favorites } = useFavorites();
   
+  // 2. AHORA GUARDAMOS EL ID DEL PRODUCTO ABIERTO, NO EL OBJETO
+  const [openPopoverId, setOpenPopoverId] = useState(null);
+  
   const [stores, setStores] = useState([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoadingStores, setIsLoadingStores] = useState(true);
+  
+  const [featuredProducts, setFeaturedProducts] = useState([]);
+  const [isLoadingProducts, setIsLoadingProducts] = useState(true);
 
   useEffect(() => {
-    async function fetchStores() {
+    async function fetchData() {
       try {
-        let { data, error } = await supabase
-          .from('stores')
-          .select('*');
+        let { data: storesData, error: storesError } = await supabase.from('stores').select('*');
+        if (storesError) throw storesError;
+        setStores(storesData || []); 
+        
+        let { data: productsData, error: productsError } = await supabase
+          .from('products')
+          .select('*')
+          .order('created_at', { ascending: false })
+          .limit(8);
+        if (productsError) throw productsError;
+        setFeaturedProducts(productsData || []);
 
-        if (error) throw error;
-        setStores(data || []); 
       } catch (err) {
         console.error("Error de conexión:", err);
       } finally {
-        setIsLoading(false); 
+        setIsLoadingStores(false); 
+        setIsLoadingProducts(false);
       }
     }
-
-    fetchStores();
+    fetchData();
   }, []); 
 
   return (
     <div className="min-h-screen bg-[#faf9f8] text-slate-700 font-sans selection:bg-pink-200">
-      <header className="bg-[#faf9f8]/80 backdrop-blur-xl sticky top-0 z-50 border-b border-slate-100">
+      
+      <header className="bg-[#faf9f8]/80 backdrop-blur-xl sticky top-0 z-40 border-b border-slate-100">
         <div className="max-w-6xl mx-auto px-6 h-20 flex items-center justify-between">
           <div className="flex items-center space-x-3 cursor-pointer">
             <div className="w-10 h-10 bg-pink-100 rounded-[1rem] flex items-center justify-center text-pink-500">
@@ -68,9 +74,8 @@ export default function Home() {
               <input type="text" placeholder="Busca tiendas o productos..." className="flex-1 bg-transparent border-none focus:outline-none text-sm placeholder:text-slate-400" />
             </div>
           </div>
+          
           <div className="flex items-center space-x-3">
-            
-            {/* 3. NUEVO BOTÓN DE FAVORITOS */}
             <Link to="/favoritos" className="p-2.5 bg-white rounded-full shadow-sm hover:shadow-md transition-shadow relative text-slate-600">
               <Heart size={20} />
               {favorites.length > 0 && (
@@ -88,8 +93,9 @@ export default function Home() {
                 </span>
               )}
             </button>
+
             <Link to="/login" className="hidden sm:flex items-center space-x-2 bg-slate-800 text-white px-5 py-2.5 rounded-full text-sm font-semibold hover:bg-slate-700 transition-colors shadow-sm">
-            <User size={16} /><span>Entrar</span>
+              <User size={16} /><span>Entrar</span>
             </Link>
           </div>
         </div>
@@ -97,7 +103,6 @@ export default function Home() {
 
       <main className="max-w-6xl mx-auto px-6 pb-24">
         
-        {/* HERO SECTION */}
         <section className="mt-16 mb-20 flex flex-col items-center text-center">
           <div className="inline-flex items-center space-x-2 bg-white px-4 py-2 rounded-full text-sm font-medium text-slate-600 shadow-sm border border-slate-100 mb-8">
             <span className="text-pink-400"><Sparkles size={16} /></span>
@@ -112,7 +117,6 @@ export default function Home() {
           </p>
         </section>
 
-        {/* SECCIÓN CATEGORÍAS */}
         <section className="mb-24">
           <div className="flex items-center justify-between mb-10">
             <h2 className="text-2xl font-bold text-slate-800 flex items-center gap-3">Explora por Categorías</h2>
@@ -133,7 +137,6 @@ export default function Home() {
           </div>
         </section>
 
-        {/* SECCIÓN TIENDAS REALES DESDE SUPABASE */}
         <section className="mb-24">
           <div className="flex items-center justify-between mb-10">
             <h2 className="text-2xl font-bold text-slate-800 flex items-center gap-3">Tiendas que amamos</h2>
@@ -142,7 +145,7 @@ export default function Home() {
             </Link>
           </div>
           
-          {isLoading ? (
+          {isLoadingStores ? (
              <div className="text-center py-10 text-slate-400 font-medium">Buscando tiendas en Komorebi... 🌸</div>
           ) : stores.length === 0 ? (
              <div className="text-center py-10 bg-white rounded-3xl border border-slate-100 shadow-sm text-slate-500">
@@ -171,29 +174,91 @@ export default function Home() {
           )}
         </section>
 
-        {/* SECCIÓN TENDENCIAS */}
         <section className="mb-24">
           <h2 className="text-2xl font-bold text-slate-800 mb-10 flex items-center gap-3">Tesoros del día</h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-6">
-            {mockTrending.map(product => (
-              <div key={product.id} className="bg-white rounded-[2rem] p-5 flex flex-col relative group shadow-sm hover:shadow-xl transition-all duration-300 border border-slate-100">
-                <button className="absolute top-6 right-6 z-10 p-2 rounded-full bg-white/50 backdrop-blur-sm text-slate-400 opacity-0 group-hover:opacity-100 transition-opacity hover:text-pink-500 hover:bg-white">
-                  <Heart size={18} />
-                </button>
-                <div className={`${product.bgColor} h-48 rounded-[1.5rem] flex items-center justify-center text-7xl mb-5 transition-transform duration-500 group-hover:scale-95`}>{product.icon}</div>
-                <div className="text-xs font-medium text-slate-400 mb-2 flex items-center">{product.store}</div>
-                <h4 className="font-semibold text-slate-800 leading-snug mb-4 flex-1">{product.name}</h4>
-                <div className="flex items-center justify-between mt-auto">
-                  <span className="font-bold text-lg text-slate-800">${product.price}</span>
-                  <button onClick={() => addToCart(product)} className="w-10 h-10 rounded-full bg-slate-50 flex items-center justify-center text-slate-600 hover:bg-slate-800 hover:text-white transition-colors">
-                    <ShoppingBag size={18} />
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
+          
+          {isLoadingProducts ? (
+             <div className="flex items-center justify-center py-10 text-slate-400">
+               <Loader2 className="animate-spin mr-2 text-pink-400" size={24} /> Buscando productos...
+             </div>
+          ) : featuredProducts.length === 0 ? (
+             <div className="text-center py-10 bg-white rounded-3xl border border-slate-100 shadow-sm text-slate-500">
+                Aún no hay productos.
+             </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-6">
+              {featuredProducts.map(product => {
+                const productStore = stores.find(s => s.id === product.store_id);
+
+                return (
+                  <div key={product.id} className="bg-white rounded-[2rem] p-5 flex flex-col group shadow-sm hover:shadow-xl transition-all duration-300 border border-slate-100 hover:-translate-y-1">
+                    
+                    {product.badge && (
+                      <span className="absolute top-8 left-8 z-10 bg-white/90 backdrop-blur-sm text-slate-800 text-[10px] font-bold px-2 py-1 rounded-full shadow-sm">
+                        {product.badge}
+                      </span>
+                    )}
+
+                    <button className="absolute top-8 right-8 z-10 p-2 rounded-full bg-white/50 backdrop-blur-sm text-slate-400 opacity-0 group-hover:opacity-100 transition-opacity hover:text-pink-500 hover:bg-white shadow-sm">
+                      <Heart size={18} />
+                    </button>
+                    
+                    <Link to={`/producto/${product.slug}`} className={`${product.bg_color || 'bg-slate-50'} h-48 rounded-[1.5rem] relative overflow-hidden flex items-center justify-center text-7xl mb-5 transition-transform duration-500 group-hover:scale-95`}>
+                      {product.icon || '📦'}
+                      
+                      {productStore && (
+                        <div 
+                          className="absolute bottom-3 left-3 w-8 h-8 bg-white/90 backdrop-blur-sm rounded-full flex items-center justify-center text-sm shadow-sm border border-slate-100" 
+                          title={`Vendido por ${productStore.name}`}
+                        >
+                          {productStore.avatar_icon || '🏪'}
+                        </div>
+                      )}
+                    </Link>
+                    
+                    <Link to={`/producto/${product.slug}`}>
+                      <h4 className="font-semibold text-slate-800 leading-snug mb-1 hover:text-pink-500 transition-colors line-clamp-2">{product.name}</h4>
+                    </Link>
+
+                    {productStore && (
+                      <Link to={`/tienda/${productStore.slug}`} className="text-xs font-medium text-slate-400 mb-4 hover:text-pink-500 transition-colors flex items-center w-max">
+                        {productStore.name}
+                      </Link>
+                    )}
+                    
+                    {/* 3. CONTENEDOR RELATIVE PARA ANCLAR EL POPOVER */}
+                    <div className="relative flex items-center justify-between mt-auto">
+                      <span className="font-bold text-lg text-slate-800">${product.price}</span>
+                      
+                      <button 
+                        onClick={(e) => {
+                          e.preventDefault();
+                          // Si ya está abierto lo cerramos, si no lo abrimos
+                          setOpenPopoverId(openPopoverId === product.id ? null : product.id);
+                        }} 
+                        className="w-10 h-10 rounded-full bg-slate-50 flex items-center justify-center text-slate-600 hover:bg-slate-800 hover:text-white transition-colors shadow-sm"
+                        title={product.options && Object.keys(product.options).length > 0 ? "Elegir opciones" : "Agregar al carrito"}
+                      >
+                        <ShoppingBag size={18} />
+                      </button>
+
+                      {/* AQUÍ SE RENDERIZA LA VENTANITA SOLO SI ESTE PRODUCTO ESTÁ SELECCIONADO */}
+                      {openPopoverId === product.id && (
+                        <QuickAddPopover 
+                          product={product} 
+                          onClose={() => setOpenPopoverId(null)} 
+                        />
+                      )}
+                    </div>
+
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </section>
       </main>
+
     </div>
   );
 }
