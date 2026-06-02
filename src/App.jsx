@@ -12,6 +12,7 @@ import CartPanel from './components/CartPanel';
 import Login from './pages/Login';
 import AdminDashboard from './pages/AdminDashboard'; // Pon esto arriba con los imports
 import SearchProducts from './pages/SearchProducts';
+import UserProfile from './pages/UserProfile';
 
 export default function App() {
   return (
@@ -29,6 +30,7 @@ export default function App() {
             <Route path="/login" element={<Login />} />
             <Route path="/admin" element={<AdminDashboard />} />
             <Route path="/buscar" element={<SearchProducts />} />
+            <Route path="/perfil" element={<UserProfile />} />
           </Routes>
         </BrowserRouter>
       </CartProvider>

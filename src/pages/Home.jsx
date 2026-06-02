@@ -118,9 +118,9 @@ export default function Home() {
               )}
             </button>
 
-            <Link to="/login" className="hidden sm:flex items-center space-x-2 bg-slate-800 text-white px-5 py-2.5 rounded-full text-sm font-semibold hover:bg-slate-700 transition-colors shadow-sm">
-              <User size={16} /><span>Entrar</span>
-            </Link>
+            <Link to="/perfil" className="hidden sm:flex items-center space-x-2 bg-slate-800 text-white px-5 py-2.5 rounded-full text-sm font-semibold hover:bg-slate-700 transition-colors shadow-sm">
+  <User size={16} /><span>Mi Perfil</span>
+</Link>
           </div>
 
         </div>

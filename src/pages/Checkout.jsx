@@ -1,180 +1,266 @@
-import React, { useState } from 'react';
-import { ArrowLeft, CheckCircle2, ShoppingBag } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
+import { useNavigate, Link } from 'react-router-dom';
 import { useCart } from '../context/CartContext';
+import { supabase } from '../lib/supabaseClient';
+import { ArrowLeft, CreditCard, ShieldCheck, Loader2, ShoppingBag, User, Mail, Phone, MapPin } from 'lucide-react';
 
 export default function Checkout() {
-  const { cart, getCartTotal } = useCart();
+  const { cart, clearCart, getCartTotal } = useCart();
+  const navigate = useNavigate();
   const [isProcessing, setIsProcessing] = useState(false);
+  const [session, setSession] = useState(null);
+
+  // Formulario del Cliente
+  const [customerInfo, setCustomerInfo] = useState({
+    name: '',
+    email: '',
+    phone: '',
+    address: ''
+  });
+
+  useEffect(() => {
+    // Si el usuario está logueado, pre-llenamos su email
+    supabase.auth.getSession().then(({ data }) => {
+      if (data?.session) {
+        setSession(data.session);
+        setCustomerInfo(prev => ({ ...prev, email: data.session.user.email }));
+      }
+    });
+  }, []);
+
+  // Agrupamos el carrito visualmente y para la base de datos
+  const groupedCart = cart.reduce((acc, item) => {
+    const key = item.id;
+    if (!acc[key]) {
+      acc[key] = { ...item, quantity: 0 };
+    }
+    acc[key].quantity += 1;
+    return acc;
+  }, {});
+
+  const orderItems = Object.values(groupedCart);
+  const totalAmount = getCartTotal();
+
+  const handlePayment = async (e) => {
+    e.preventDefault();
+    
+    // Validación básica
+    if (!customerInfo.name || !customerInfo.email || !customerInfo.phone || !customerInfo.address) {
+      alert("Por favor, completa todos tus datos de envío antes de pagar.");
+      return;
+    }
+
+    setIsProcessing(true);
+
+    try {
+      const userId = session?.user?.id || null;
+
+      // 1. Preparamos los items (ahora leemos el combo directamente de selectedOptions)
+      const itemsToSave = orderItems.map(item => {
+        const comboKey = item.selectedOptions && Object.keys(item.selectedOptions).length > 0
+          ? Object.values(item.selectedOptions).join(' | ')
+          : 'default';
+
+        return {
+          product_id: item.originalId || item.id,
+          name: item.name,
+          combo: comboKey,
+          quantity: item.quantity,
+          price: item.price,
+          store_id: item.store_id
+        };
+      });
+
+      // 2. 🦇 LA MAGIA REPARADA: DEDUCIR INVENTARIO
+      for (const item of itemsToSave) {
+        const { data: product } = await supabase
+          .from('products')
+          .select('stock, variant_stock')
+          .eq('id', item.product_id)
+          .single();
+
+        if (product) {
+          let newStock = product.stock;
+          let newVariantStock = { ...product.variant_stock };
+
+          if (item.combo !== 'default' && newVariantStock[item.combo] !== undefined) {
+            newVariantStock[item.combo] = Math.max(0, parseInt(newVariantStock[item.combo]) - item.quantity);
+          } else {
+            newStock = Math.max(0, parseInt(newStock) - item.quantity);
+          }
+
+          await supabase
+            .from('products')
+            .update({ stock: newStock, variant_stock: newVariantStock })
+            .eq('id', item.product_id);
+        }
+      }
+
+      // 3. CREAR EL RECIBO DE LA ORDEN CON DATOS DEL CLIENTE
+      const { error: orderError } = await supabase.from('orders').insert([{
+        user_id: userId,
+        total: totalAmount,
+        items: itemsToSave,
+        customer_info: customerInfo, // ¡Aquí guardamos quién compró y a dónde enviar!
+        status: 'pagado'
+      }]);
+
+      if (orderError) throw orderError;
+
+      // 4. LIMPIAR Y CELEBRAR
+      clearCart();
+      alert(`¡Gracias por tu compra, ${customerInfo.name}! Tu pedido está en camino.`);
+      
+      if (userId) {
+        navigate('/perfil');
+      } else {
+        navigate('/');
+      }
+
+    } catch (err) {
+      console.error("Error procesando pago:", err);
+      alert("Ocurrió un error al procesar tu orden.");
+    } finally {
+      setIsProcessing(false);
+    }
+  };
 
   if (cart.length === 0) {
     return (
-      <div className="min-h-screen bg-[#faf9f8] flex flex-col items-center justify-center text-slate-700 p-6 text-center">
-        <ShoppingBag size={64} className="text-slate-200 mb-4" />
-        <h1 className="text-3xl font-extrabold text-slate-800 mb-2">Tu carrito está vacío</h1>
-        <p className="text-slate-500 mb-8">Parece que no tienes nada que pagar aún.</p>
-        <Link to="/explorar-tiendas" className="bg-pink-100 text-pink-600 px-8 py-3 rounded-full font-bold hover:bg-pink-200 transition-colors">
-          Explorar tiendas
+      <div className="min-h-screen bg-[#faf9f8] flex flex-col items-center justify-center p-6 text-center">
+        <div className="w-24 h-24 bg-slate-100 rounded-full flex items-center justify-center text-slate-300 mb-6">
+          <ShoppingBag size={40} />
+        </div>
+        <h2 className="text-2xl font-extrabold text-slate-800 mb-2">Tu carrito está vacío</h2>
+        <p className="text-slate-500 mb-8 max-w-md">No tienes ningún producto listo para pagar. Vuelve a la tienda y encuentra algo increíble.</p>
+        <Link to="/" className="bg-slate-800 text-white px-8 py-3.5 rounded-full font-bold hover:bg-slate-700 transition-colors shadow-md">
+          Explorar Tiendas
         </Link>
       </div>
     );
   }
 
-  const handlePayment = (e) => {
-    e.preventDefault();
-    setIsProcessing(true);
-    setTimeout(() => {
-      alert("¡Simulación de pago exitosa!");
-      setIsProcessing(false);
-    }, 2000);
-  };
-
-  // ----------------------------------------------------------------------
-  // LA MAGIA VISUAL: Agrupamos los productos del carrito por su ID original
-  // ----------------------------------------------------------------------
-  const groupedCart = Object.values(cart.reduce((acc, item) => {
-    // Usamos el originalId (el de la base de datos) o el id normal si no tiene variantes
-    const baseId = item.originalId || item.id;
-    
-    if (!acc[baseId]) {
-      // Si es la primera vez que vemos este producto, creamos su "caja"
-      acc[baseId] = {
-        ...item,
-        id: baseId,
-        totalQuantity: 0,
-        variantList: [] // Aquí guardaremos: [{ name: '40x40cm', qty: 2 }]
-      };
-    }
-    
-    // Sumamos la cantidad al total general de este producto
-    acc[baseId].totalQuantity += item.quantity;
-
-    // Si este ítem específico tiene variantes, lo añadimos a la sub-lista
-    if (item.selectedOptions && Object.keys(item.selectedOptions).length > 0) {
-      const variantString = Object.values(item.selectedOptions).join(' • ');
-      acc[baseId].variantList.push({ name: variantString, qty: item.quantity });
-    }
-
-    return acc;
-  }, {}));
-
   return (
-    <div className="min-h-screen bg-[#faf9f8] text-slate-700 font-sans selection:bg-pink-200 pb-24">
-      <header className="bg-white border-b border-slate-100 sticky top-0 z-50">
-        <div className="max-w-6xl mx-auto px-6 h-20 flex items-center justify-between">
-          <Link to="/" className="text-slate-500 hover:text-slate-800 flex items-center font-medium text-sm transition-colors">
-            <ArrowLeft size={18} className="mr-2" /> Volver al inicio
-          </Link>
-          <div className="text-xl font-bold tracking-tight text-slate-800">
-            Komorebi <span className="text-slate-300 font-normal">| Checkout</span>
+    <div className="min-h-screen bg-[#faf9f8] text-slate-700 font-sans selection:bg-pink-200 pb-12">
+      
+      <header className="bg-white/80 backdrop-blur-xl sticky top-0 z-40 border-b border-slate-100 mb-8">
+        <div className="max-w-5xl mx-auto px-6 h-20 flex items-center justify-between">
+          <button onClick={() => navigate(-1)} className="text-slate-500 hover:text-slate-800 flex items-center font-medium text-sm transition-colors">
+            <ArrowLeft size={18} className="mr-2" /> Volver
+          </button>
+          <div className="text-xl font-bold tracking-tight text-slate-800 flex items-center gap-2">
+            <ShieldCheck className="text-emerald-500" /> Pago Seguro
           </div>
-          <div className="w-24"></div> 
+          <div className="w-20"></div>
         </div>
       </header>
 
-      <main className="max-w-6xl mx-auto px-6 mt-12">
-        <div className="flex flex-col lg:flex-row gap-12">
+      <main className="max-w-5xl mx-auto px-6">
+        <div className="flex flex-col lg:flex-row gap-10">
           
-          <div className="flex-1">
-            <h2 className="text-2xl font-bold text-slate-800 mb-8 flex items-center">
-              <span className="bg-slate-800 text-white w-8 h-8 rounded-full flex items-center justify-center text-sm mr-3">1</span>
-              Información de Envío
-            </h2>
+          {/* COLUMNA IZQUIERDA: DATOS Y RESUMEN */}
+          <div className="flex-1 space-y-8">
             
-            <form onSubmit={handlePayment} className="space-y-6 bg-white p-8 rounded-[2rem] shadow-sm border border-slate-100">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div>
-                  <label className="block text-sm font-semibold text-slate-700 mb-2">Nombre completo</label>
-                  <input type="text" required className="w-full border border-slate-200 rounded-xl px-4 py-3 bg-slate-50 focus:outline-none focus:ring-2 focus:ring-pink-100 focus:bg-white transition-all" placeholder="Ej. Ana Pérez" />
+            {/* FORMULARIO DEL CLIENTE */}
+            <section className="bg-white rounded-[2rem] p-6 sm:p-8 shadow-sm border border-slate-100">
+              <h2 className="text-2xl font-extrabold text-slate-800 mb-6">Datos de Envío</h2>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                <div className="col-span-2">
+                  <label className="block text-sm font-bold text-slate-700 mb-2">Nombre Completo</label>
+                  <div className="relative">
+                    <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none"><User size={18} className="text-slate-400"/></div>
+                    <input type="text" value={customerInfo.name} onChange={e => setCustomerInfo({...customerInfo, name: e.target.value})} className="w-full pl-11 pr-4 py-3 rounded-xl bg-slate-50 border border-slate-200 focus:border-pink-300 focus:bg-white outline-none transition-all font-medium" placeholder="Ej. Juan Pérez" />
+                  </div>
                 </div>
                 <div>
-                  <label className="block text-sm font-semibold text-slate-700 mb-2">Teléfono</label>
-                  <input type="tel" required className="w-full border border-slate-200 rounded-xl px-4 py-3 bg-slate-50 focus:outline-none focus:ring-2 focus:ring-pink-100 focus:bg-white transition-all" placeholder="Ej. 0412 1234567" />
+                  <label className="block text-sm font-bold text-slate-700 mb-2">Correo Electrónico</label>
+                  <div className="relative">
+                    <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none"><Mail size={18} className="text-slate-400"/></div>
+                    <input type="email" value={customerInfo.email} onChange={e => setCustomerInfo({...customerInfo, email: e.target.value})} className="w-full pl-11 pr-4 py-3 rounded-xl bg-slate-50 border border-slate-200 focus:border-pink-300 focus:bg-white outline-none transition-all font-medium" placeholder="tu@email.com" />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-sm font-bold text-slate-700 mb-2">Teléfono</label>
+                  <div className="relative">
+                    <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none"><Phone size={18} className="text-slate-400"/></div>
+                    <input type="tel" value={customerInfo.phone} onChange={e => setCustomerInfo({...customerInfo, phone: e.target.value})} className="w-full pl-11 pr-4 py-3 rounded-xl bg-slate-50 border border-slate-200 focus:border-pink-300 focus:bg-white outline-none transition-all font-medium" placeholder="Ej. 0412 1234567" />
+                  </div>
+                </div>
+                <div className="col-span-2">
+                  <label className="block text-sm font-bold text-slate-700 mb-2">Dirección de Entrega</label>
+                  <div className="relative">
+                    <div className="absolute top-3.5 left-4 pointer-events-none"><MapPin size={18} className="text-slate-400"/></div>
+                    <textarea value={customerInfo.address} onChange={e => setCustomerInfo({...customerInfo, address: e.target.value})} rows="3" className="w-full pl-11 pr-4 py-3 rounded-xl bg-slate-50 border border-slate-200 focus:border-pink-300 focus:bg-white outline-none transition-all font-medium resize-none" placeholder="Ej. Calle Principal, Casa 4, Guacara, Carabobo..."></textarea>
+                  </div>
                 </div>
               </div>
+            </section>
 
-              <div>
-                <label className="block text-sm font-semibold text-slate-700 mb-2">Dirección de entrega</label>
-                <input type="text" required className="w-full border border-slate-200 rounded-xl px-4 py-3 bg-slate-50 focus:outline-none focus:ring-2 focus:ring-pink-100 focus:bg-white transition-all mb-4" placeholder="Calle, Avenida, Edificio..." />
-                <div className="grid grid-cols-2 gap-6">
-                  <input type="text" required className="w-full border border-slate-200 rounded-xl px-4 py-3 bg-slate-50 focus:outline-none focus:ring-2 focus:ring-pink-100 focus:bg-white transition-all" placeholder="Ciudad" />
-                  <input type="text" required className="w-full border border-slate-200 rounded-xl px-4 py-3 bg-slate-50 focus:outline-none focus:ring-2 focus:ring-pink-100 focus:bg-white transition-all" placeholder="Estado" />
-                </div>
-              </div>
-
-              <div className="pt-6 mt-6 border-t border-slate-100">
-                 <h2 className="text-xl font-bold text-slate-800 mb-6 flex items-center">
-                    <span className="bg-slate-800 text-white w-8 h-8 rounded-full flex items-center justify-center text-sm mr-3">2</span>
-                    Método de Pago
-                  </h2>
-                  <p className="text-sm text-slate-500 mb-4">Por ahora, solo aceptamos pagos simulados para esta demo.</p>
-                  <button type="submit" disabled={isProcessing} className={`w-full text-white font-bold py-4 rounded-xl shadow-sm transition-all flex items-center justify-center ${isProcessing ? 'bg-slate-400 cursor-not-allowed' : 'bg-pink-500 hover:bg-pink-600 hover:shadow-md'}`}>
-                    {isProcessing ? (
-                       <span className="flex items-center">
-                         <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
-                         Procesando...
-                       </span>
-                    ) : (
-                      <>Pagar ${getCartTotal()}</>
-                    )}
-                  </button>
-              </div>
-            </form>
-          </div>
-
-          <div className="w-full lg:w-96 flex-shrink-0">
-            <div className="bg-white p-6 rounded-[2rem] shadow-sm border border-slate-100 sticky top-28">
-              <h3 className="font-bold text-lg text-slate-800 mb-6">Resumen del Pedido</h3>
-              <div className="space-y-4 mb-6 max-h-[40vh] overflow-y-auto pr-2">
-                
-                {/* AHORA ITERAMOS SOBRE EL CARRITO AGRUPADO (groupedCart) */}
-                {groupedCart.map((item) => (
-                  <div key={item.id} className="flex gap-4 items-start">
-                    <div className={`${item.bg_color || 'bg-slate-100'} w-14 h-14 rounded-lg flex items-center justify-center text-2xl flex-shrink-0`}>
-                      {item.icon}
+            {/* RESUMEN DEL PEDIDO */}
+            <section className="bg-white rounded-[2rem] p-6 sm:p-8 shadow-sm border border-slate-100">
+              <h2 className="text-2xl font-extrabold text-slate-800 mb-6">Tu Pedido</h2>
+              <div className="space-y-6">
+                {orderItems.map((item) => (
+                  <div key={item.id} className="flex items-center gap-4 pb-6 border-b border-slate-50 last:border-0 last:pb-0">
+                    <div className={`w-16 h-16 ${item.bg_color || 'bg-slate-50'} rounded-2xl flex items-center justify-center text-3xl border border-slate-100`}>
+                      {item.icon || '📦'}
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <h4 className="font-semibold text-slate-800 text-sm truncate">{item.name}</h4>
-                      
-                      {/* Si NO tiene variantes, mostramos la cantidad normal */}
-                      {item.variantList.length === 0 ? (
-                        <p className="text-xs text-slate-500 mt-0.5">Cant: {item.totalQuantity}</p>
-                      ) : (
-                        /* Si SÍ tiene variantes, mostramos la lista detallada */
-                        <div className="mt-1 space-y-1">
-                          {item.variantList.map((variant, index) => (
-                            <p key={index} className="text-xs text-slate-500 bg-slate-50 px-2 py-1 rounded-md inline-block mr-1 mb-1">
-                              <span className="font-semibold text-slate-700">{variant.name}:</span> {variant.qty}
-                            </p>
-                          ))}
-                        </div>
+                    <div className="flex-1">
+                      <h4 className="font-bold text-slate-800 leading-snug">{item.name}</h4>
+                      {item.selectedOptions && Object.keys(item.selectedOptions).length > 0 && (
+                        <p className="text-xs font-medium text-pink-500 mt-0.5 bg-pink-50 inline-block px-2 py-0.5 rounded-md">
+                          {Object.values(item.selectedOptions).join(' | ')}
+                        </p>
                       )}
+                      <p className="text-sm font-bold text-slate-500 mt-1">Cantidad: {item.quantity}</p>
                     </div>
-                    <span className="font-bold text-sm text-slate-800 flex-shrink-0">
-                      ${item.price * item.totalQuantity}
-                    </span>
+                    <div className="font-black text-lg text-slate-800">
+                      ${(item.price * item.quantity).toFixed(2)}
+                    </div>
                   </div>
                 ))}
-                
               </div>
-              <div className="border-t border-slate-100 pt-4 space-y-3">
-                <div className="flex justify-between text-sm text-slate-500">
+            </section>
+
+          </div>
+
+          {/* COLUMNA DERECHA: PANEL DE PAGO */}
+          <div className="w-full lg:w-[380px] flex-shrink-0">
+            <div className="bg-slate-800 rounded-[2rem] p-8 text-white shadow-xl sticky top-28">
+              <h3 className="text-xl font-bold mb-6 flex items-center gap-2">
+                <CreditCard className="text-pink-400" /> Total a Pagar
+              </h3>
+              
+              <div className="space-y-4 mb-8">
+                <div className="flex justify-between text-slate-300 font-medium">
                   <span>Subtotal</span>
-                  <span>${getCartTotal()}</span>
+                  <span>${totalAmount}</span>
                 </div>
-                <div className="flex justify-between text-sm text-slate-500">
-                  <span>Envío estimado</span>
-                  <span>$5</span>
+                <div className="flex justify-between text-slate-300 font-medium">
+                  <span>Envío</span>
+                  <span className="text-emerald-400 font-bold">¡Gratis!</span>
                 </div>
-                <div className="flex justify-between font-bold text-lg text-slate-800 pt-2 border-t border-slate-100 mt-2">
-                  <span>Total</span>
-                  <span className="text-pink-600">${getCartTotal() + 5}</span>
+                <div className="border-t border-slate-700 pt-4 flex justify-between items-center mt-4">
+                  <span className="text-lg font-bold">Total</span>
+                  <span className="text-4xl font-black text-pink-400">${totalAmount}</span>
                 </div>
               </div>
-              <div className="mt-8 bg-emerald-50 rounded-xl p-4 flex items-start">
-                <CheckCircle2 className="text-emerald-500 mr-3 mt-0.5 flex-shrink-0" size={18} />
-                <p className="text-xs text-emerald-700">Tu pago está protegido. Al hacer clic en "Pagar", aceptas nuestros términos y condiciones.</p>
-              </div>
+
+              <button 
+                onClick={handlePayment} 
+                disabled={isProcessing}
+                className="w-full bg-pink-500 text-white font-bold py-4 rounded-xl hover:bg-pink-600 transition-all flex items-center justify-center gap-2 shadow-md hover:shadow-lg disabled:opacity-70 transform hover:-translate-y-0.5"
+              >
+                {isProcessing ? (
+                  <><Loader2 className="animate-spin" size={20} /> Procesando...</>
+                ) : (
+                  <>Pagar Ahora</>
+                )}
+              </button>
+              
+              <p className="text-xs text-center text-slate-400 mt-6 font-medium leading-relaxed">
+                Tus datos están protegidos. El inventario se actualizará automáticamente tras confirmar el pago.
+              </p>
             </div>
           </div>
 

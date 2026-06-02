@@ -18,6 +18,10 @@ export function CartProvider({ children }) {
     });
   };
 
+  const clearCart = () => {
+    setCart([]);
+  };
+
   const removeFromCart = (productId) => {
     setCart((prevCart) => prevCart.filter((item) => item.id !== productId));
   };
@@ -55,7 +59,8 @@ export function CartProvider({ children }) {
       getCartTotal,
       isCartOpen,
       toggleCart,
-      closeCart
+      closeCart,
+      clearCart
     }}>
       {children}
     </CartContext.Provider>

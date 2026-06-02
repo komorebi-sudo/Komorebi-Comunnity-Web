@@ -32,7 +32,7 @@ export default function Login() {
         if (error) throw error;
         
         // Si todo sale bien, lo mandamos al panel de control (que crearemos pronto)
-        navigate('/admin'); 
+        navigate('/perfil'); 
 
       } else {
         // LÓGICA PARA REGISTRARSE
