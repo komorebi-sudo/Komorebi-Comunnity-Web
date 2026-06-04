@@ -12,14 +12,10 @@ export default function Checkout() {
 
   // Formulario del Cliente
   const [customerInfo, setCustomerInfo] = useState({
-    name: '',
-    email: '',
-    phone: '',
-    address: ''
+    name: '', email: '', phone: '', address: ''
   });
 
   useEffect(() => {
-    // Si el usuario está logueado, pre-llenamos su email
     supabase.auth.getSession().then(({ data }) => {
       if (data?.session) {
         setSession(data.session);
@@ -28,23 +24,13 @@ export default function Checkout() {
     });
   }, []);
 
-  // Agrupamos el carrito visualmente y para la base de datos
-  const groupedCart = cart.reduce((acc, item) => {
-    const key = item.id;
-    if (!acc[key]) {
-      acc[key] = { ...item, quantity: 0 };
-    }
-    acc[key].quantity += 1;
-    return acc;
-  }, {});
-
-  const orderItems = Object.values(groupedCart);
+  // ¡CORRECCIÓN MAESTRA! Ya no agrupamos a la fuerza, usamos el carrito real
+  const orderItems = cart;
   const totalAmount = getCartTotal();
 
   const handlePayment = async (e) => {
     e.preventDefault();
     
-    // Validación básica
     if (!customerInfo.name || !customerInfo.email || !customerInfo.phone || !customerInfo.address) {
       alert("Por favor, completa todos tus datos de envío antes de pagar.");
       return;
@@ -55,7 +41,6 @@ export default function Checkout() {
     try {
       const userId = session?.user?.id || null;
 
-      // 1. Preparamos los items (ahora leemos el combo directamente de selectedOptions)
       const itemsToSave = orderItems.map(item => {
         const comboKey = item.selectedOptions && Object.keys(item.selectedOptions).length > 0
           ? Object.values(item.selectedOptions).join(' | ')
@@ -65,13 +50,13 @@ export default function Checkout() {
           product_id: item.originalId || item.id,
           name: item.name,
           combo: comboKey,
-          quantity: item.quantity,
+          quantity: item.quantity, // ¡Aquí lee la cantidad real (ej: 5, 10, etc)!
           price: item.price,
           store_id: item.store_id
         };
       });
 
-      // 2. 🦇 LA MAGIA REPARADA: DEDUCIR INVENTARIO
+      // DEDUCIR INVENTARIO MATEMÁTICO
       for (const item of itemsToSave) {
         const { data: product } = await supabase
           .from('products')
@@ -80,13 +65,13 @@ export default function Checkout() {
           .single();
 
         if (product) {
-          let newStock = product.stock;
+          let newStock = Number(product.stock) || 0;
           let newVariantStock = { ...product.variant_stock };
 
           if (item.combo !== 'default' && newVariantStock[item.combo] !== undefined) {
-            newVariantStock[item.combo] = Math.max(0, parseInt(newVariantStock[item.combo]) - item.quantity);
+            newVariantStock[item.combo] = Math.max(0, Number(newVariantStock[item.combo]) - item.quantity);
           } else {
-            newStock = Math.max(0, parseInt(newStock) - item.quantity);
+            newStock = Math.max(0, newStock - item.quantity);
           }
 
           await supabase
@@ -96,26 +81,22 @@ export default function Checkout() {
         }
       }
 
-      // 3. CREAR EL RECIBO DE LA ORDEN CON DATOS DEL CLIENTE
+      // CREAR EL RECIBO DE LA ORDEN
       const { error: orderError } = await supabase.from('orders').insert([{
         user_id: userId,
         total: totalAmount,
         items: itemsToSave,
-        customer_info: customerInfo, // ¡Aquí guardamos quién compró y a dónde enviar!
+        customer_info: customerInfo,
         status: 'pagado'
       }]);
 
       if (orderError) throw orderError;
 
-      // 4. LIMPIAR Y CELEBRAR
       clearCart();
       alert(`¡Gracias por tu compra, ${customerInfo.name}! Tu pedido está en camino.`);
       
-      if (userId) {
-        navigate('/perfil');
-      } else {
-        navigate('/');
-      }
+      if (userId) navigate('/perfil');
+      else navigate('/');
 
     } catch (err) {
       console.error("Error procesando pago:", err);
@@ -132,8 +113,7 @@ export default function Checkout() {
           <ShoppingBag size={40} />
         </div>
         <h2 className="text-2xl font-extrabold text-slate-800 mb-2">Tu carrito está vacío</h2>
-        <p className="text-slate-500 mb-8 max-w-md">No tienes ningún producto listo para pagar. Vuelve a la tienda y encuentra algo increíble.</p>
-        <Link to="/" className="bg-slate-800 text-white px-8 py-3.5 rounded-full font-bold hover:bg-slate-700 transition-colors shadow-md">
+        <Link to="/" className="mt-8 bg-slate-800 text-white px-8 py-3.5 rounded-full font-bold hover:bg-slate-700 transition-colors shadow-md">
           Explorar Tiendas
         </Link>
       </div>
@@ -142,7 +122,6 @@ export default function Checkout() {
 
   return (
     <div className="min-h-screen bg-[#faf9f8] text-slate-700 font-sans selection:bg-pink-200 pb-12">
-      
       <header className="bg-white/80 backdrop-blur-xl sticky top-0 z-40 border-b border-slate-100 mb-8">
         <div className="max-w-5xl mx-auto px-6 h-20 flex items-center justify-between">
           <button onClick={() => navigate(-1)} className="text-slate-500 hover:text-slate-800 flex items-center font-medium text-sm transition-colors">
@@ -158,10 +137,8 @@ export default function Checkout() {
       <main className="max-w-5xl mx-auto px-6">
         <div className="flex flex-col lg:flex-row gap-10">
           
-          {/* COLUMNA IZQUIERDA: DATOS Y RESUMEN */}
+          {/* FORMULARIO Y RESUMEN */}
           <div className="flex-1 space-y-8">
-            
-            {/* FORMULARIO DEL CLIENTE */}
             <section className="bg-white rounded-[2rem] p-6 sm:p-8 shadow-sm border border-slate-100">
               <h2 className="text-2xl font-extrabold text-slate-800 mb-6">Datos de Envío</h2>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
@@ -190,13 +167,12 @@ export default function Checkout() {
                   <label className="block text-sm font-bold text-slate-700 mb-2">Dirección de Entrega</label>
                   <div className="relative">
                     <div className="absolute top-3.5 left-4 pointer-events-none"><MapPin size={18} className="text-slate-400"/></div>
-                    <textarea value={customerInfo.address} onChange={e => setCustomerInfo({...customerInfo, address: e.target.value})} rows="3" className="w-full pl-11 pr-4 py-3 rounded-xl bg-slate-50 border border-slate-200 focus:border-pink-300 focus:bg-white outline-none transition-all font-medium resize-none" placeholder="Ej. Calle Principal, Casa 4, Guacara, Carabobo..."></textarea>
+                    <textarea value={customerInfo.address} onChange={e => setCustomerInfo({...customerInfo, address: e.target.value})} rows="3" className="w-full pl-11 pr-4 py-3 rounded-xl bg-slate-50 border border-slate-200 focus:border-pink-300 focus:bg-white outline-none transition-all font-medium resize-none" placeholder="Ej. Calle Principal..."></textarea>
                   </div>
                 </div>
               </div>
             </section>
 
-            {/* RESUMEN DEL PEDIDO */}
             <section className="bg-white rounded-[2rem] p-6 sm:p-8 shadow-sm border border-slate-100">
               <h2 className="text-2xl font-extrabold text-slate-800 mb-6">Tu Pedido</h2>
               <div className="space-y-6">
@@ -221,10 +197,9 @@ export default function Checkout() {
                 ))}
               </div>
             </section>
-
           </div>
 
-          {/* COLUMNA DERECHA: PANEL DE PAGO */}
+          {/* PANEL DE PAGO */}
           <div className="w-full lg:w-[380px] flex-shrink-0">
             <div className="bg-slate-800 rounded-[2rem] p-8 text-white shadow-xl sticky top-28">
               <h3 className="text-xl font-bold mb-6 flex items-center gap-2">
@@ -251,19 +226,10 @@ export default function Checkout() {
                 disabled={isProcessing}
                 className="w-full bg-pink-500 text-white font-bold py-4 rounded-xl hover:bg-pink-600 transition-all flex items-center justify-center gap-2 shadow-md hover:shadow-lg disabled:opacity-70 transform hover:-translate-y-0.5"
               >
-                {isProcessing ? (
-                  <><Loader2 className="animate-spin" size={20} /> Procesando...</>
-                ) : (
-                  <>Pagar Ahora</>
-                )}
+                {isProcessing ? <><Loader2 className="animate-spin" size={20} /> Procesando...</> : <>Pagar Ahora</>}
               </button>
-              
-              <p className="text-xs text-center text-slate-400 mt-6 font-medium leading-relaxed">
-                Tus datos están protegidos. El inventario se actualizará automáticamente tras confirmar el pago.
-              </p>
             </div>
           </div>
-
         </div>
       </main>
     </div>
