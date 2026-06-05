@@ -1,7 +1,7 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { supabase } from '../lib/supabaseClient';
-import { Store, Package, Settings, Plus, LogOut, Loader2, Home, User as UserIcon, Edit, Trash2, Save, LayoutDashboard, Search } from 'lucide-react';
+import { Store, Package, Settings, Plus, LogOut, Loader2, Home, User as UserIcon, Edit, Trash2, Save, LayoutDashboard, Search, UploadCloud, Image as ImageIcon } from 'lucide-react';
 
 export default function AdminDashboard() {
   const navigate = useNavigate();
@@ -12,21 +12,25 @@ export default function AdminDashboard() {
   const [activeTab, setActiveTab] = useState('resumen');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Estados
   const [newStore, setNewStore] = useState({ name: '', type: '', slug: '' });
-  const [storeSettings, setStoreSettings] = useState({ name: '', type: '', cover_color: '', avatar_icon: '', slug: '' });
+  const [storeSettings, setStoreSettings] = useState({ name: '', type: '', slug: '', avatar_url: '', banner_url: '' });
   const [editingProductId, setEditingProductId] = useState(null);
   
+  const [productImageFile, setProductImageFile] = useState(null);
+  const [productImagePreview, setProductImagePreview] = useState(null);
+  const [storeAvatarFile, setStoreAvatarFile] = useState(null);
+  const [storeBannerFile, setStoreBannerFile] = useState(null);
+
+  // ELIMINADOS LOS EMOJIS DEL ESTADO INICIAL
   const defaultProductState = {
-    name: '', description: '', price: '', stock: '', category: '',
-    icon: '📦', bg_color: 'bg-slate-50', badge: '',
-    options: {}, variant_stock: {}
+    name: '', description: '', price: '', stock: '', category: '', badge: '', image_url: '', options: {}, variant_stock: {}
   };
   const [newProduct, setNewProduct] = useState(defaultProductState);
   const [optionName, setOptionName] = useState('');
   const [optionValues, setOptionValues] = useState('');
 
-  // 1. CARGA INICIAL
+  const fileInputRef = useRef(null);
+
   useEffect(() => {
     async function fetchData() {
       try {
@@ -51,7 +55,6 @@ export default function AdminDashboard() {
     fetchData();
   }, [navigate]);
 
-  // 2. LÓGICA DE VARIANTES
   const handleAddOption = (e) => {
     e.preventDefault();
     if (!optionName || !optionValues) return;
@@ -67,7 +70,6 @@ export default function AdminDashboard() {
     setNewProduct(prev => ({ ...prev, options: newOptions }));
   };
 
-  // 2.1 Generar combinaciones de variantes
   useEffect(() => {
     if (!newProduct.options || Object.keys(newProduct.options).length === 0) return;
     const keys = Object.keys(newProduct.options);
@@ -85,21 +87,30 @@ export default function AdminDashboard() {
       newVariantStock[comboKey] = newProduct.variant_stock?.[comboKey] || '';
     });
     setNewProduct(prev => ({ ...prev, variant_stock: newVariantStock }));
-  }, [newProduct.options]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [newProduct.options]);
 
-  // 2.2 ¡NUEVO!: Radar que suma y bloquea el stock general automáticamente
   useEffect(() => {
     const hasVariants = newProduct.variant_stock && Object.keys(newProduct.variant_stock).length > 0;
     if (hasVariants) {
       const totalStock = Object.values(newProduct.variant_stock).reduce((sum, val) => sum + (parseInt(val) || 0), 0);
       setNewProduct(prev => {
-        if (prev.stock === totalStock) return prev; // Evitar ciclos infinitos
+        if (prev.stock === totalStock) return prev;
         return { ...prev, stock: totalStock };
       });
     }
   }, [newProduct.variant_stock]);
 
-  // 3. ACCIONES BD
+  const uploadImage = async (file, pathPrefix) => {
+    if (!file) return null;
+    const fileExt = file.name.split('.').pop();
+    const fileName = `${pathPrefix}-${Date.now()}.${fileExt}`;
+    const filePath = `${session.user.id}/${fileName}`;
+    const { error: uploadError } = await supabase.storage.from('images').upload(filePath, file);
+    if (uploadError) throw uploadError;
+    const { data } = supabase.storage.from('images').getPublicUrl(filePath);
+    return data.publicUrl;
+  };
+
   const handleLogout = async () => { await supabase.auth.signOut(); navigate('/'); };
 
   const handleCreateStore = async (e) => {
@@ -107,8 +118,7 @@ export default function AdminDashboard() {
     setIsSubmitting(true);
     try {
       const { data, error } = await supabase.from('stores').insert([{
-        user_id: session.user.id, name: newStore.name, type: newStore.type,
-        slug: newStore.slug, avatar_icon: '🏪', cover_color: 'bg-pink-100'
+        user_id: session.user.id, name: newStore.name, type: newStore.type, slug: newStore.slug
       }]).select();
       if (error) throw error;
       setStore(data[0]);
@@ -120,25 +130,41 @@ export default function AdminDashboard() {
     e.preventDefault();
     setIsSubmitting(true);
     try {
-      const { error } = await supabase.from('stores').update({
-        name: storeSettings.name, type: storeSettings.type,
-        cover_color: storeSettings.cover_color, avatar_icon: storeSettings.avatar_icon
-      }).eq('id', store.id);
+      let finalAvatarUrl = storeSettings.avatar_url;
+      let finalBannerUrl = storeSettings.banner_url;
+
+      if (storeAvatarFile) finalAvatarUrl = await uploadImage(storeAvatarFile, 'avatar');
+      if (storeBannerFile) finalBannerUrl = await uploadImage(storeBannerFile, 'banner');
+
+      const updates = { name: storeSettings.name, type: storeSettings.type, avatar_url: finalAvatarUrl, banner_url: finalBannerUrl };
+
+      const { error } = await supabase.from('stores').update(updates).eq('id', store.id);
       if (error) throw error;
-      setStore({ ...store, ...storeSettings });
+      
+      setStore({ ...store, ...updates });
+      setStoreSettings({ ...storeSettings, ...updates });
+      setStoreAvatarFile(null);
+      setStoreBannerFile(null);
       alert("¡Configuración actualizada con éxito!");
-    } catch (err) { alert("Error al guardar configuración"); } finally { setIsSubmitting(false); }
+    } catch (err) { 
+      console.error(err);
+      alert("Error al guardar configuración"); 
+    } finally { setIsSubmitting(false); }
   };
 
   const handleSaveProduct = async (e) => {
     e.preventDefault();
     setIsSubmitting(true);
     try {
+      let finalImageUrl = newProduct.image_url;
+      if (productImageFile) {
+        finalImageUrl = await uploadImage(productImageFile, 'product');
+      }
+
       const productData = {
         store_id: store.id, name: newProduct.name, slug: newProduct.name.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
         description: newProduct.description, price: parseFloat(newProduct.price), stock: parseInt(newProduct.stock) || 0,
-        category: newProduct.category, icon: newProduct.icon, bg_color: newProduct.bg_color,
-        badge: newProduct.badge, options: newProduct.options, variant_stock: newProduct.variant_stock
+        category: newProduct.category, badge: newProduct.badge, image_url: finalImageUrl, options: newProduct.options, variant_stock: newProduct.variant_stock
       };
 
       if (editingProductId) {
@@ -153,8 +179,13 @@ export default function AdminDashboard() {
 
       setNewProduct(defaultProductState);
       setEditingProductId(null);
+      setProductImageFile(null);
+      setProductImagePreview(null);
       setActiveTab('productos');
-    } catch (err) { alert("Error al guardar producto"); } finally { setIsSubmitting(false); }
+    } catch (err) { 
+      console.error(err);
+      alert("Error al guardar producto. Revisa los permisos de Storage."); 
+    } finally { setIsSubmitting(false); }
   };
 
   const handleDeleteProduct = async (id) => {
@@ -169,26 +200,31 @@ export default function AdminDashboard() {
   const handleEditClick = (product) => {
     setNewProduct(product);
     setEditingProductId(product.id);
+    setProductImagePreview(product.image_url || null);
+    setProductImageFile(null);
     setActiveTab('nuevo-producto');
   };
 
   const handleCancelEdit = () => {
     setNewProduct(defaultProductState);
     setEditingProductId(null);
+    setProductImageFile(null);
+    setProductImagePreview(null);
     setActiveTab('productos');
   };
 
   if (isLoading) return <div className="min-h-screen bg-[#faf9f8] flex items-center justify-center"><Loader2 className="animate-spin text-pink-500" size={32}/></div>;
   if (!session) return null;
 
-  // Calculamos si hay variantes para bloquear el input
   const hasVariants = Object.keys(newProduct.variant_stock || {}).length > 0;
 
   return (
     <div className="min-h-screen bg-[#faf9f8] text-slate-700 flex">
       <aside className="w-64 bg-white border-r border-slate-100 flex flex-col fixed h-full z-10 shadow-sm">
         <div className="p-6 border-b border-slate-100 flex items-center gap-3">
-          <div className="w-8 h-8 bg-slate-800 rounded-lg flex items-center justify-center text-white"><Store size={16} /></div>
+          <div className="w-8 h-8 bg-slate-800 rounded-lg flex items-center justify-center text-white overflow-hidden font-bold">
+            {store?.avatar_url ? <img src={store.avatar_url} className="w-full h-full object-cover" /> : store?.name?.charAt(0).toUpperCase() || 'K'}
+          </div>
           <span className="font-bold text-slate-800 truncate">{store ? store.name : 'Creador'}</span>
         </div>
         {store && (
@@ -230,7 +266,7 @@ export default function AdminDashboard() {
           <div className="animate-in fade-in duration-300">
             <div className="flex items-center justify-between mb-8">
               <h1 className="text-3xl font-extrabold text-slate-800">Tus Productos</h1>
-              <button onClick={() => { setEditingProductId(null); setNewProduct(defaultProductState); setActiveTab('nuevo-producto'); }} className="bg-pink-500 text-white px-6 py-3 rounded-2xl font-bold hover:bg-pink-600 transition-all flex items-center gap-2 shadow-md hover:-translate-y-0.5"><Plus size={20} /> Crear Producto</button>
+              <button onClick={() => { setEditingProductId(null); setNewProduct(defaultProductState); setProductImagePreview(null); setActiveTab('nuevo-producto'); }} className="bg-pink-500 text-white px-6 py-3 rounded-2xl font-bold hover:bg-pink-600 transition-all flex items-center gap-2 shadow-md hover:-translate-y-0.5"><Plus size={20} /> Crear Producto</button>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
               {products.map(p => (
@@ -239,7 +275,18 @@ export default function AdminDashboard() {
                     <button onClick={() => handleEditClick(p)} className="p-2.5 bg-white text-blue-500 rounded-full shadow-md hover:bg-blue-50 transition-colors" title="Editar"><Edit size={16}/></button>
                     <button onClick={() => handleDeleteProduct(p.id)} className="p-2.5 bg-white text-red-500 rounded-full shadow-md hover:bg-red-50 transition-colors" title="Eliminar"><Trash2 size={16}/></button>
                   </div>
-                  <div className={`${p.bg_color || 'bg-slate-50'} h-40 rounded-[1.5rem] flex items-center justify-center text-6xl mb-4`}>{p.icon || '📦'}</div>
+                  
+                  {p.image_url ? (
+                    <div className="h-40 w-full mb-4 rounded-[1.5rem] overflow-hidden bg-slate-100">
+                      <img src={p.image_url} alt={p.name} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" />
+                    </div>
+                  ) : (
+                    <div className="h-40 w-full mb-4 rounded-[1.5rem] overflow-hidden bg-slate-50 flex flex-col items-center justify-center p-4 text-center border-2 border-dashed border-slate-200">
+                      <span className="text-[11px] font-bold text-slate-400 mb-1 leading-tight">Ups aqui deberia haber una foto hermosa...</span>
+                      <span className="text-[9px] text-slate-400/80 font-medium">alguien sera despedido hoy</span>
+                    </div>
+                  )}
+
                   <h4 className="font-bold text-slate-800 mb-1 line-clamp-1">{p.name}</h4>
                   <div className="flex justify-between items-center mt-auto pt-4">
                     <span className="font-black text-slate-800">${p.price}</span>
@@ -256,32 +303,32 @@ export default function AdminDashboard() {
               {editingProductId && <button onClick={handleCancelEdit} className="text-slate-400 hover:text-slate-600 font-bold text-sm bg-white px-4 py-2 rounded-xl shadow-sm border border-slate-100">Cancelar</button>}
             </div>
             <form onSubmit={handleSaveProduct} className="bg-white rounded-[2.5rem] p-8 shadow-sm border border-slate-100 space-y-6">
+              
+              <div className="mb-6">
+                <label className="block text-sm font-bold text-slate-700 mb-3">Fotografía del Producto</label>
+                <div 
+                  onClick={() => fileInputRef.current?.click()}
+                  className={`w-full h-48 rounded-[1.5rem] border-2 border-dashed flex flex-col items-center justify-center cursor-pointer transition-all overflow-hidden ${productImagePreview ? 'border-transparent bg-slate-100' : 'border-slate-300 bg-slate-50 hover:bg-pink-50 hover:border-pink-300 hover:text-pink-500 text-slate-400'}`}
+                >
+                  {productImagePreview ? (
+                    <img src={productImagePreview} className="w-full h-full object-contain" alt="Preview" />
+                  ) : (
+                    <>
+                      <UploadCloud size={36} className="mb-2" />
+                      <span className="font-medium text-sm">Haz clic para subir una imagen JPG o PNG</span>
+                    </>
+                  )}
+                  <input type="file" className="hidden" ref={fileInputRef} accept="image/*" onChange={(e) => { if (e.target.files && e.target.files[0]) { setProductImageFile(e.target.files[0]); setProductImagePreview(URL.createObjectURL(e.target.files[0])); } }} />
+                </div>
+              </div>
+
               <div className="grid grid-cols-2 gap-6">
                 <div className="col-span-2"><label className="block text-sm font-bold text-slate-700 mb-2">Nombre del producto</label><input type="text" required value={newProduct.name} onChange={e => setNewProduct({...newProduct, name: e.target.value})} className="w-full px-4 py-3 rounded-xl bg-slate-50 border border-slate-200 outline-none focus:border-pink-300 focus:bg-white transition-all font-medium" /></div>
                 <div className="col-span-2"><label className="block text-sm font-bold text-slate-700 mb-2">Descripción breve</label><input type="text" value={newProduct.description} onChange={e => setNewProduct({...newProduct, description: e.target.value})} className="w-full px-4 py-3 rounded-xl bg-slate-50 border border-slate-200 outline-none focus:border-pink-300 focus:bg-white transition-all font-medium" /></div>
                 <div><label className="block text-sm font-bold text-slate-700 mb-2">Precio ($)</label><input type="number" step="0.01" required value={newProduct.price} onChange={e => setNewProduct({...newProduct, price: e.target.value})} className="w-full px-4 py-3 rounded-xl bg-slate-50 border border-slate-200 outline-none focus:border-pink-300 focus:bg-white transition-all font-medium" /></div>
-                
-                {/* AQUI ESTÁ LA MAGIA DEL INPUT BLOQUEADO */}
                 <div>
-                  <label className="block text-sm font-bold text-slate-700 mb-2">
-                    {hasVariants ? 'Stock (Calculado automático)' : 'Stock General'}
-                  </label>
-                  <input 
-                    type="number" 
-                    value={newProduct.stock} 
-                    onChange={e => setNewProduct({...newProduct, stock: e.target.value})} 
-                    disabled={hasVariants}
-                    title={hasVariants ? "El stock se suma automáticamente usando las variantes de abajo" : "Ingresa el stock"}
-                    className={`w-full px-4 py-3 rounded-xl border border-slate-200 outline-none transition-all font-medium ${hasVariants ? 'bg-slate-200 text-slate-500 cursor-not-allowed opacity-70' : 'bg-slate-50 focus:border-pink-300 focus:bg-white'}`} 
-                  />
-                </div>
-                
-                <div><label className="block text-sm font-bold text-slate-700 mb-2">Icono (Emoji)</label><input type="text" value={newProduct.icon} onChange={e => setNewProduct({...newProduct, icon: e.target.value})} className="w-full px-4 py-3 rounded-xl bg-slate-50 border border-slate-200 outline-none focus:border-pink-300 focus:bg-white transition-all text-2xl text-center" /></div>
-                <div>
-                  <label className="block text-sm font-bold text-slate-700 mb-2">Color de fondo</label>
-                  <select value={newProduct.bg_color} onChange={e => setNewProduct({...newProduct, bg_color: e.target.value})} className="w-full px-4 py-3 rounded-xl bg-slate-50 border border-slate-200 outline-none focus:border-pink-300 focus:bg-white transition-all font-medium">
-                    <option value="bg-slate-50">Gris</option><option value="bg-pink-50">Rosa</option><option value="bg-blue-50">Azul</option><option value="bg-emerald-50">Verde</option>
-                  </select>
+                  <label className="block text-sm font-bold text-slate-700 mb-2">{hasVariants ? 'Stock (Automático)' : 'Stock General'}</label>
+                  <input type="number" value={newProduct.stock} onChange={e => setNewProduct({...newProduct, stock: e.target.value})} disabled={hasVariants} className={`w-full px-4 py-3 rounded-xl border border-slate-200 outline-none transition-all font-medium ${hasVariants ? 'bg-slate-200 text-slate-500 cursor-not-allowed opacity-70' : 'bg-slate-50 focus:border-pink-300 focus:bg-white'}`} />
                 </div>
               </div>
 
@@ -315,12 +362,49 @@ export default function AdminDashboard() {
           </div>
         ) : activeTab === 'configuracion' ? (
           <div className="max-w-2xl animate-in slide-in-from-bottom-8 duration-300">
-            <h1 className="text-3xl font-extrabold text-slate-800 mb-8">Configuración de Tienda</h1>
+            <h1 className="text-3xl font-extrabold text-slate-800 mb-8">Identidad de la Tienda</h1>
             <form onSubmit={handleSaveSettings} className="bg-white rounded-[2.5rem] p-8 shadow-sm border border-slate-100 space-y-6">
+              
+              <div className="mb-8 border border-slate-200 rounded-[2rem] overflow-hidden relative">
+                 <div className="h-32 bg-slate-100 relative group flex items-center justify-center">
+                    {storeSettings.banner_url || storeBannerFile ? (
+                      <img src={storeBannerFile ? URL.createObjectURL(storeBannerFile) : storeSettings.banner_url} className="w-full h-full object-cover" />
+                    ) : (
+                      <div className="flex flex-col items-center justify-center p-4 text-center text-slate-400 w-full h-full border-2 border-dashed border-slate-200 bg-slate-50">
+                        <span className="text-sm font-bold leading-tight mb-1">Ups aqui deberia haber una foto hermosa...</span>
+                        <span className="text-xs font-medium">alguien sera despedido hoy</span>
+                      </div>
+                    )}
+                    <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center cursor-pointer">
+                      <label className="text-white font-bold text-sm flex items-center gap-2 cursor-pointer"><UploadCloud size={18} /> Cambiar Banner
+                        <input type="file" className="hidden" accept="image/*" onChange={(e) => e.target.files[0] && setStoreBannerFile(e.target.files[0])} />
+                      </label>
+                    </div>
+                 </div>
+
+                 <div className="absolute top-20 left-6 w-20 h-20 bg-white rounded-full flex items-center justify-center shadow-md border-4 border-white overflow-hidden group font-black text-2xl text-slate-300">
+                    {storeSettings.avatar_url || storeAvatarFile ? (
+                      <img src={storeAvatarFile ? URL.createObjectURL(storeAvatarFile) : storeSettings.avatar_url} className="w-full h-full object-cover" />
+                    ) : storeSettings.name?.charAt(0).toUpperCase() || 'S'}
+                    <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center cursor-pointer">
+                      <label className="cursor-pointer text-white"><UploadCloud size={20} />
+                        <input type="file" className="hidden" accept="image/*" onChange={(e) => e.target.files[0] && setStoreAvatarFile(e.target.files[0])} />
+                      </label>
+                    </div>
+                 </div>
+                 
+                 <div className="pt-12 pb-4 px-6 bg-white">
+                    <h3 className="font-bold text-lg text-slate-800">{storeSettings.name || 'Tu Tienda'}</h3>
+                 </div>
+              </div>
+
               <div className="grid grid-cols-2 gap-6">
                 <div className="col-span-2"><label className="block text-sm font-bold text-slate-700 mb-2">Nombre de la Tienda</label><input type="text" required value={storeSettings.name} onChange={e => setStoreSettings({...storeSettings, name: e.target.value})} className="w-full px-4 py-3 rounded-xl bg-slate-50 border border-slate-200 outline-none focus:border-pink-300" /></div>
+                <div className="col-span-2"><label className="block text-sm font-bold text-slate-700 mb-2">Categoría</label><input type="text" required value={storeSettings.type} onChange={e => setStoreSettings({...storeSettings, type: e.target.value})} className="w-full px-4 py-3 rounded-xl bg-slate-50 border border-slate-200 outline-none focus:border-pink-300" /></div>
               </div>
-              <button type="submit" disabled={isSubmitting} className="bg-slate-800 text-white font-bold py-3.5 px-8 rounded-xl hover:bg-slate-700 transition-all">Guardar Configuración</button>
+              <button type="submit" disabled={isSubmitting} className="bg-slate-800 text-white font-bold py-3.5 px-8 rounded-xl hover:bg-slate-700 transition-all flex items-center gap-2">
+                {isSubmitting ? <Loader2 className="animate-spin" size={18} /> : <Save size={18} />} Guardar Identidad
+              </button>
             </form>
           </div>
         ) : null}

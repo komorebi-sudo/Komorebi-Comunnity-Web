@@ -77,18 +77,24 @@ export default function QuickAddPopover({ product, onClose }) {
 
     // LA MAGIA ACTUALIZADA: Volar desde la imagen original
     const targetCart = document.getElementById('cart-header-icon');
-    const sourceImage = document.getElementById(`product-image-${product.id}`); // Buscamos la foto original
+    const sourceImage = document.getElementById(`product-image-${product.id}`); 
     
     if (targetCart && sourceImage) {
       const targetRect = targetCart.getBoundingClientRect();
       const sourceRect = sourceImage.getBoundingClientRect();
       
       const flyingItem = document.createElement('div');
-      flyingItem.innerHTML = product.icon || '📦';
-      // Clases para que se vea idéntico al icono de la tarjeta antes de volar
-      flyingItem.className = 'fixed z-[99999] flex items-center justify-center text-7xl transition-all duration-[800ms] ease-in-out pointer-events-none drop-shadow-2xl';
       
-      // Nace EXACTAMENTE en las coordenadas de la foto original con el mismo ancho/alto
+      // RENDEREIZADO CONDICIONAL PARA LA ANIMACIÓN
+      if (product.image_url) {
+        flyingItem.innerHTML = `<img src="${product.image_url}" style="width: 100%; height: 100%; object-fit: cover; border-radius: 1.5rem;" />`;
+        flyingItem.className = 'fixed z-[99999] transition-all duration-[800ms] ease-in-out pointer-events-none drop-shadow-2xl';
+      } else {
+        flyingItem.innerHTML = product.icon || '📦';
+        flyingItem.className = 'fixed z-[99999] flex items-center justify-center text-7xl transition-all duration-[800ms] ease-in-out pointer-events-none drop-shadow-2xl';
+      }
+      
+      // Nace EXACTAMENTE en las coordenadas de la foto original
       flyingItem.style.left = `${sourceRect.left}px`;
       flyingItem.style.top = `${sourceRect.top}px`;
       flyingItem.style.width = `${sourceRect.width}px`;
