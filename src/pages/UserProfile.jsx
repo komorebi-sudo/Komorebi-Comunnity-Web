@@ -1,12 +1,13 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { supabase } from '../lib/supabaseClient';
-import { User, Package, Heart, Store, LogOut, ArrowLeft, Loader2, Sparkles } from 'lucide-react';
+import { User, Package, Heart, Store, LogOut, ArrowLeft, Loader2, Sparkles, Clock, CheckCircle, FileText } from 'lucide-react';
 
 export default function UserProfile() {
   const navigate = useNavigate();
   const [session, setSession] = useState(null);
   const [userStore, setUserStore] = useState(null);
+  const [myOrders, setMyOrders] = useState([]); // NUEVO: Estado para el historial de compras
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
@@ -22,14 +23,25 @@ export default function UserProfile() {
         }
         setSession(session);
 
-        // Verificamos si este usuario ya es un VENDEDOR (tiene tienda)
+        // 1. Verificamos si este usuario ya es un VENDEDOR (tiene tienda)
         const { data: storeData } = await supabase
           .from('stores')
           .select('*')
           .eq('user_id', session.user.id)
           .single();
-
         setUserStore(storeData);
+
+        // 2. Buscamos el HISTORIAL DE COMPRAS de este usuario
+        const { data: ordersData } = await supabase
+          .from('orders')
+          .select('*')
+          .eq('user_id', session.user.id)
+          .order('created_at', { ascending: false });
+          
+        if (ordersData) {
+          setMyOrders(ordersData);
+        }
+
       } catch (err) {
         console.error("Error al cargar perfil:", err.message);
       } finally {
@@ -48,7 +60,7 @@ export default function UserProfile() {
   if (!session) return null;
 
   return (
-    <div className="min-h-screen bg-[#faf9f8] text-slate-700 font-sans selection:bg-pink-200">
+    <div className="min-h-screen bg-[#faf9f8] text-slate-700 font-sans selection:bg-pink-200 pb-12">
       <header className="bg-white/80 backdrop-blur-xl sticky top-0 z-40 border-b border-slate-100">
         <div className="max-w-4xl mx-auto px-6 h-20 flex items-center justify-between">
           
@@ -93,12 +105,61 @@ export default function UserProfile() {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
           {/* COLUMNA IZQUIERDA: Herramientas del Comprador */}
           <div className="space-y-8">
+            
+            {/* HISTORIAL DE COMPRAS */}
             <div className="bg-white rounded-[2rem] p-8 shadow-sm border border-slate-100">
               <h2 className="text-xl font-bold text-slate-800 mb-6 flex items-center gap-2"><Package className="text-slate-400"/> Mis Pedidos</h2>
-              <div className="bg-slate-50 rounded-2xl p-6 text-center border border-slate-100">
-                <Package size={32} className="mx-auto text-slate-300 mb-3" />
-                <p className="text-slate-500 text-sm font-medium">Aún no has hecho ninguna compra.</p>
-              </div>
+              
+              {myOrders.length === 0 ? (
+                <div className="bg-slate-50 rounded-2xl p-6 text-center border border-slate-100">
+                  <Package size={32} className="mx-auto text-slate-300 mb-3" />
+                  <p className="text-slate-500 text-sm font-medium">Aún no has hecho ninguna compra.</p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {myOrders.map(order => {
+                    const itemCount = order.items ? order.items.reduce((sum, item) => sum + item.quantity, 0) : 0;
+                    const orderTotal = order.total || (order.items ? order.items.reduce((sum, item) => sum + (item.price * item.quantity), 0) : 0);
+
+                    return (
+                      <div key={order.id} className="bg-[#faf9f8] rounded-2xl p-5 border border-slate-100 flex flex-col gap-4 hover:border-pink-200 transition-colors">
+                        
+                        <div className="flex justify-between items-start">
+                          <div>
+                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Pedido #{order.id.split('-')[0]}</span>
+                            <h3 className="font-bold text-slate-800 text-sm mt-0.5">{new Date(order.created_at).toLocaleDateString()}</h3>
+                          </div>
+                          
+                          <div className={`px-3 py-1.5 rounded-lg text-[10px] font-bold flex items-center gap-1.5 ${order.status === 'enviado' ? 'bg-emerald-100 text-emerald-600' : 'bg-amber-100 text-amber-600'}`}>
+                            {order.status === 'enviado' ? <CheckCircle size={14}/> : <Clock size={14}/>}
+                            {order.status === 'enviado' ? 'Enviado' : 'Preparando'}
+                          </div>
+                        </div>
+
+                        <div className="flex justify-between items-end border-t border-slate-200 pt-4">
+                          <div>
+                            <p className="text-xs font-bold text-slate-500 mb-0.5">{itemCount} artículo{itemCount !== 1 ? 's' : ''}</p>
+                            <p className="text-lg font-black text-pink-500">${orderTotal.toFixed(2)}</p>
+                          </div>
+                          
+                          {/* BOTÓN MÁGICO DE GUÍA DE ENVÍO */}
+                          {order.status === 'enviado' && order.shipping_receipt_url && (
+                            <a 
+                              href={order.shipping_receipt_url} 
+                              target="_blank" 
+                              rel="noreferrer" 
+                              className="flex items-center gap-1.5 text-xs font-bold text-white bg-slate-800 hover:bg-slate-700 px-4 py-2.5 rounded-xl transition-colors shadow-sm"
+                            >
+                              <FileText size={14} /> Ver guía
+                            </a>
+                          )}
+                        </div>
+
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
 
             <div className="bg-white rounded-[2rem] p-8 shadow-sm border border-slate-100">

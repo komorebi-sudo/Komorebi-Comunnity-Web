@@ -1,27 +1,29 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate, Link, useParams } from 'react-router-dom';
 import { supabase } from '../lib/supabaseClient';
-import { Store, Package, Settings, Plus, LogOut, Loader2, Home, User as UserIcon, Edit, Trash2, Save, LayoutDashboard, Search, UploadCloud, Image as ImageIcon } from 'lucide-react';
+import { Store, Package, Settings, Plus, LogOut, Loader2, Home, User as UserIcon, Edit, Trash2, Save, LayoutDashboard, Search, UploadCloud, ShoppingBag, Truck, MapPin, Phone, Mail, Clock, CheckCircle, X, FileText, Palette } from 'lucide-react';
 
 export default function AdminDashboard() {
   const navigate = useNavigate();
+  const { tab } = useParams(); // Leemos la pestaña de la URL
+  const activeTab = tab || 'resumen'; // Si no hay tab, usamos 'resumen'
+
   const [session, setSession] = useState(null);
   const [store, setStore] = useState(null);
   const [products, setProducts] = useState([]);
+  const [orders, setOrders] = useState([]); 
   const [isLoading, setIsLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState('resumen');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const [newStore, setNewStore] = useState({ name: '', type: '', slug: '' });
-  const [storeSettings, setStoreSettings] = useState({ name: '', type: '', slug: '', avatar_url: '', banner_url: '' });
-  const [editingProductId, setEditingProductId] = useState(null);
+  const [storeSettings, setStoreSettings] = useState({ name: '', type: '', slug: '', avatar_url: '', banner_url: '', template_id: 'default' });
   
+  const [editingProductId, setEditingProductId] = useState(null);
   const [productImageFile, setProductImageFile] = useState(null);
   const [productImagePreview, setProductImagePreview] = useState(null);
   const [storeAvatarFile, setStoreAvatarFile] = useState(null);
   const [storeBannerFile, setStoreBannerFile] = useState(null);
 
-  // ELIMINADOS LOS EMOJIS DEL ESTADO INICIAL
   const defaultProductState = {
     name: '', description: '', price: '', stock: '', category: '', badge: '', image_url: '', options: {}, variant_stock: {}
   };
@@ -30,6 +32,16 @@ export default function AdminDashboard() {
   const [optionValues, setOptionValues] = useState('');
 
   const fileInputRef = useRef(null);
+  const [isReceiptModalOpen, setIsReceiptModalOpen] = useState(false);
+  const [orderToShip, setOrderToShip] = useState(null);
+  const [receiptFile, setReceiptFile] = useState(null);
+  const [receiptPreview, setReceiptPreview] = useState(null);
+  const receiptInputRef = useRef(null);
+
+  // Redirección si la URL es /admin vacío
+  useEffect(() => {
+    if (!tab) navigate('/admin/resumen', { replace: true });
+  }, [tab, navigate]);
 
   useEffect(() => {
     async function fetchData() {
@@ -42,15 +54,26 @@ export default function AdminDashboard() {
         const { data: storeData } = await supabase.from('stores').select('*').eq('user_id', session.user.id).single();
         if (storeData) {
           setStore(storeData);
-          setStoreSettings(storeData);
+          setStoreSettings({
+            name: storeData.name || '',
+            type: storeData.type || '',
+            slug: storeData.slug || '',
+            avatar_url: storeData.avatar_url || '',
+            banner_url: storeData.banner_url || '',
+            template_id: storeData.template_id || 'default'
+          });
+          
           const { data: productsData } = await supabase.from('products').select('*').eq('store_id', storeData.id).order('created_at', { ascending: false });
           setProducts(productsData || []);
+
+          const { data: ordersData } = await supabase.from('orders').select('*').order('created_at', { ascending: false });
+          if (ordersData) {
+            const storeOrders = ordersData.filter(order => order.items && order.items.some(item => item.store_id === storeData.id));
+            setOrders(storeOrders);
+          }
         }
-      } catch (err) {
-        console.error("Error al cargar datos:", err.message);
-      } finally {
-        setIsLoading(false);
-      }
+      } catch (err) { console.error("Error al cargar datos:", err.message); } 
+      finally { setIsLoading(false); }
     }
     fetchData();
   }, [navigate]);
@@ -59,7 +82,7 @@ export default function AdminDashboard() {
     e.preventDefault();
     if (!optionName || !optionValues) return;
     const valuesArray = optionValues.split(',').map(v => v.trim()).filter(v => v);
-    setNewProduct(prev => ({ ...prev, options: { ...prev.options, [optionName]: valuesArray } }));
+    setNewProduct(prev => ({ ...prev, options: { ...(prev.options || {}), [optionName]: valuesArray } }));
     setOptionName('');
     setOptionValues('');
   };
@@ -74,7 +97,8 @@ export default function AdminDashboard() {
     if (!newProduct.options || Object.keys(newProduct.options).length === 0) return;
     const keys = Object.keys(newProduct.options);
     const combinations = keys.reduce((acc, key) => {
-      const values = newProduct.options[key];
+      const values = Array.isArray(newProduct.options[key]) ? newProduct.options[key] : [];
+      if (values.length === 0) return acc;
       if (acc.length === 0) return values.map(v => ({ [key]: v }));
       const newAcc = [];
       acc.forEach(combo => { values.forEach(v => { newAcc.push({ ...combo, [key]: v }); }); });
@@ -86,7 +110,14 @@ export default function AdminDashboard() {
       const comboKey = Object.values(combo).join(' | ');
       newVariantStock[comboKey] = newProduct.variant_stock?.[comboKey] || '';
     });
-    setNewProduct(prev => ({ ...prev, variant_stock: newVariantStock }));
+    
+    setNewProduct(prev => {
+       const isDifferent = JSON.stringify(prev.variant_stock) !== JSON.stringify(newVariantStock);
+       if (isDifferent) {
+          return { ...prev, variant_stock: newVariantStock };
+       }
+       return prev;
+    });
   }, [newProduct.options]);
 
   useEffect(() => {
@@ -118,11 +149,11 @@ export default function AdminDashboard() {
     setIsSubmitting(true);
     try {
       const { data, error } = await supabase.from('stores').insert([{
-        user_id: session.user.id, name: newStore.name, type: newStore.type, slug: newStore.slug
+        user_id: session.user.id, name: newStore.name, type: newStore.type, slug: newStore.slug, template_id: 'default'
       }]).select();
       if (error) throw error;
       setStore(data[0]);
-      setStoreSettings(data[0]);
+      setStoreSettings({ ...data[0], template_id: 'default' });
     } catch (err) { alert("Error al crear la tienda"); } finally { setIsSubmitting(false); }
   };
 
@@ -136,7 +167,13 @@ export default function AdminDashboard() {
       if (storeAvatarFile) finalAvatarUrl = await uploadImage(storeAvatarFile, 'avatar');
       if (storeBannerFile) finalBannerUrl = await uploadImage(storeBannerFile, 'banner');
 
-      const updates = { name: storeSettings.name, type: storeSettings.type, avatar_url: finalAvatarUrl, banner_url: finalBannerUrl };
+      const updates = { 
+        name: storeSettings.name, 
+        type: storeSettings.type, 
+        avatar_url: finalAvatarUrl, 
+        banner_url: finalBannerUrl,
+        template_id: storeSettings.template_id 
+      };
 
       const { error } = await supabase.from('stores').update(updates).eq('id', store.id);
       if (error) throw error;
@@ -161,17 +198,26 @@ export default function AdminDashboard() {
         finalImageUrl = await uploadImage(productImageFile, 'product');
       }
 
+      // 1. Blindamos el objeto y evitamos mandar datos nulos que crashean la DB
       const productData = {
-        store_id: store.id, name: newProduct.name, slug: newProduct.name.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
-        description: newProduct.description, price: parseFloat(newProduct.price), stock: parseInt(newProduct.stock) || 0,
-        category: newProduct.category, badge: newProduct.badge, image_url: finalImageUrl, options: newProduct.options, variant_stock: newProduct.variant_stock
+        name: newProduct.name, 
+        slug: newProduct.name.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
+        description: newProduct.description || null, 
+        price: parseFloat(newProduct.price), 
+        stock: parseInt(newProduct.stock) || 0,
+        image_url: finalImageUrl || null, 
+        options: newProduct.options || {}, 
+        variant_stock: newProduct.variant_stock || {}
       };
 
       if (editingProductId) {
+        // 2. Al editar, NO enviamos el store_id para evitar conflictos de seguridad
         const { error } = await supabase.from('products').update(productData).eq('id', editingProductId);
         if (error) throw error;
         setProducts(products.map(p => p.id === editingProductId ? { ...p, ...productData } : p));
       } else {
+        // 3. Al crear, sí es obligatorio enlazarlo a la tienda
+        productData.store_id = store.id;
         const { data, error } = await supabase.from('products').insert([productData]).select();
         if (error) throw error;
         setProducts([data[0], ...products]);
@@ -183,9 +229,12 @@ export default function AdminDashboard() {
       setProductImagePreview(null);
       setActiveTab('productos');
     } catch (err) { 
-      console.error(err);
-      alert("Error al guardar producto. Revisa los permisos de Storage."); 
-    } finally { setIsSubmitting(false); }
+      // 4. Ahora la alerta nos gritará el error exacto
+      console.error("Error real de Supabase:", err);
+      alert(`Error del servidor: ${err.message || 'Desconocido'}`); 
+    } finally { 
+      setIsSubmitting(false); 
+    }
   };
 
   const handleDeleteProduct = async (id) => {
@@ -197,8 +246,19 @@ export default function AdminDashboard() {
     } catch (err) { alert("Error al eliminar"); }
   };
 
+  // MAGIA ANTI-CRASH: Sanitizamos la información antes de editar
   const handleEditClick = (product) => {
-    setNewProduct(product);
+    setNewProduct({
+      name: product.name || '',
+      description: product.description || '',
+      price: product.price || '',
+      stock: product.stock || 0,
+      category: product.category || '',
+      badge: product.badge || '',
+      image_url: product.image_url || '',
+      options: product.options || {},
+      variant_stock: product.variant_stock || {}
+    });
     setEditingProductId(product.id);
     setProductImagePreview(product.image_url || null);
     setProductImageFile(null);
@@ -213,8 +273,51 @@ export default function AdminDashboard() {
     setActiveTab('productos');
   };
 
+  const handleOpenReceiptModal = (orderId) => {
+    setOrderToShip(orderId);
+    setIsReceiptModalOpen(true);
+  };
+
+  const handleCloseReceiptModal = () => {
+    setIsReceiptModalOpen(false);
+    setOrderToShip(null);
+    setReceiptFile(null);
+    setReceiptPreview(null);
+  };
+
+  const handleConfirmShipment = async () => {
+    if (!receiptFile) {
+      alert("Por favor adjunta la foto de la guía de envío para el cliente.");
+      return;
+    }
+    setIsSubmitting(true);
+    try {
+      const receiptUrl = await uploadImage(receiptFile, 'receipt');
+      const { error } = await supabase.from('orders')
+        .update({ status: 'enviado', shipping_receipt_url: receiptUrl })
+        .eq('id', orderToShip);
+      
+      if (error) throw error;
+      
+      setOrders(orders.map(o => o.id === orderToShip ? { ...o, status: 'enviado', shipping_receipt_url: receiptUrl } : o));
+      handleCloseReceiptModal();
+    } catch (err) {
+      console.error(err);
+      alert("Error al confirmar el envío.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   if (isLoading) return <div className="min-h-screen bg-[#faf9f8] flex items-center justify-center"><Loader2 className="animate-spin text-pink-500" size={32}/></div>;
   if (!session) return null;
+
+  const pendingOrdersCount = orders.filter(o => o.status === 'pagado').length;
+  const totalRevenue = orders.reduce((total, order) => {
+    const storeItems = order.items.filter(i => i.store_id === store?.id);
+    const orderTotal = storeItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+    return total + orderTotal;
+  }, 0);
 
   const hasVariants = Object.keys(newProduct.variant_stock || {}).length > 0;
 
@@ -229,9 +332,13 @@ export default function AdminDashboard() {
         </div>
         {store && (
           <nav className="flex-1 p-4 space-y-1">
-            <button onClick={() => { setActiveTab('resumen'); setEditingProductId(null); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl font-medium transition-all ${activeTab === 'resumen' ? 'bg-pink-50 text-pink-600' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800'}`}><LayoutDashboard size={18} /> Resumen</button>
-            <button onClick={() => { setActiveTab('productos'); setEditingProductId(null); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl font-medium transition-all ${activeTab === 'productos' ? 'bg-pink-50 text-pink-600' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800'}`}><Package size={18} /> Mis Productos</button>
-            <button onClick={() => { setActiveTab('configuracion'); setEditingProductId(null); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl font-medium transition-all ${activeTab === 'configuracion' ? 'bg-pink-50 text-pink-600' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800'}`}><Settings size={18} /> Configuración</button>
+            <button onClick={() => navigate('/admin/resumen')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl font-medium transition-all ${activeTab === 'resumen' ? 'bg-pink-50 text-pink-600' : 'text-slate-500 hover:bg-slate-50'}`}><LayoutDashboard size={18} /> Resumen</button>
+            <button onClick={() => navigate('/admin/productos')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl font-medium transition-all ${activeTab === 'productos' ? 'bg-pink-50 text-pink-600' : 'text-slate-500 hover:bg-slate-50'}`}><Package size={18} /> Mis Productos</button>
+            <button onClick={() => navigate('/admin/ventas')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl font-medium transition-all ${activeTab === 'ventas' ? 'bg-pink-50 text-pink-600' : 'text-slate-500 hover:bg-slate-50'}`}>
+              <ShoppingBag size={18} /> Mis Ventas 
+              {pendingOrdersCount > 0 && <span className="ml-auto bg-pink-500 text-white text-[10px] px-2 py-0.5 rounded-full">{pendingOrdersCount}</span>}
+            </button>
+            <button onClick={() => navigate('/admin/configuracion')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl font-medium transition-all ${activeTab === 'configuracion' ? 'bg-pink-50 text-pink-600' : 'text-slate-500 hover:bg-slate-50'}`}><Settings size={18} /> Configuración</button>
           </nav>
         )}
         <div className="p-4 border-t border-slate-100 space-y-1">
@@ -258,9 +365,100 @@ export default function AdminDashboard() {
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
               <div className="bg-white p-6 rounded-[2rem] shadow-sm border border-slate-100 flex items-center justify-between">
                 <div><p className="text-slate-400 font-bold text-sm mb-1 uppercase tracking-wider">Productos</p><p className="text-4xl font-black text-slate-800">{products.length}</p></div>
-                <div className="w-14 h-14 bg-pink-50 rounded-2xl flex items-center justify-center text-pink-500"><Package size={24} strokeWidth={2.5}/></div>
+                <div className="w-14 h-14 bg-blue-50 rounded-2xl flex items-center justify-center text-blue-500"><Package size={24} strokeWidth={2.5}/></div>
+              </div>
+              <div className="bg-white p-6 rounded-[2rem] shadow-sm border border-slate-100 flex items-center justify-between">
+                <div><p className="text-slate-400 font-bold text-sm mb-1 uppercase tracking-wider">Por Enviar</p><p className="text-4xl font-black text-slate-800">{pendingOrdersCount}</p></div>
+                <div className="w-14 h-14 bg-amber-50 rounded-2xl flex items-center justify-center text-amber-500"><Truck size={24} strokeWidth={2.5}/></div>
+              </div>
+              <div className="bg-white p-6 rounded-[2rem] shadow-sm border border-slate-100 flex items-center justify-between">
+                <div><p className="text-slate-400 font-bold text-sm mb-1 uppercase tracking-wider">Ingresos</p><p className="text-4xl font-black text-slate-800">${totalRevenue.toFixed(2)}</p></div>
+                <div className="w-14 h-14 bg-emerald-50 rounded-2xl flex items-center justify-center text-emerald-500"><LayoutDashboard size={24} strokeWidth={2.5}/></div>
               </div>
             </div>
+          </div>
+        ) : activeTab === 'ventas' ? (
+          <div className="animate-in fade-in duration-300 max-w-4xl">
+            <h1 className="text-3xl font-extrabold text-slate-800 mb-8 flex items-center gap-3"><ShoppingBag size={28} className="text-pink-500" /> Gestión de Pedidos</h1>
+            {orders.length === 0 ? (
+              <div className="bg-white rounded-[2.5rem] p-12 text-center shadow-sm border border-slate-100 flex flex-col items-center">
+                <Package size={64} className="text-slate-200 mb-4" />
+                <h2 className="text-xl font-bold text-slate-800 mb-2">Aún no hay ventas</h2>
+                <p className="text-slate-500">Tus pedidos aparecerán aquí cuando los clientes empiecen a comprar.</p>
+              </div>
+            ) : (
+              <div className="space-y-6">
+                {orders.map(order => {
+                  const storeItems = order.items.filter(i => i.store_id === store.id);
+                  const storeTotal = storeItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+                  return (
+                    <div key={order.id} className="bg-white rounded-[2rem] p-6 shadow-sm border border-slate-100 flex flex-col gap-6">
+                      <div className="flex justify-between items-start border-b border-slate-50 pb-4">
+                        <div>
+                          <span className="text-xs font-bold text-slate-400">PEDIDO #{order.id.split('-')[0].toUpperCase()}</span>
+                          <h3 className="font-bold text-lg text-slate-800 mt-1">{new Date(order.created_at).toLocaleDateString()}</h3>
+                        </div>
+                        <div className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 ${order.status === 'enviado' ? 'bg-emerald-50 text-emerald-600' : 'bg-amber-50 text-yellow-600'}`}>
+                           {order.status === 'enviado' ? <CheckCircle size={16}/> : <Clock size={16}/>}
+                           {order.status === 'enviado' ? 'Enviado' : 'Por Enviar'}
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                         <div className="space-y-4">
+                           <h4 className="text-sm font-bold text-slate-700 flex items-center gap-2"><MapPin size={16} className="text-pink-500" /> Logística de Envío</h4>
+                           <div className="bg-[#faf9f8] p-5 rounded-2xl space-y-3 text-sm font-medium text-slate-600 border border-slate-100">
+                             <p className="flex items-center gap-3 text-slate-800"><UserIcon size={16} className="text-slate-400"/> {order.customer_info?.name}</p>
+                             <p className="flex items-center gap-3"><Phone size={16} className="text-slate-400"/> {order.customer_info?.phone}</p>
+                             <p className="flex items-center gap-3"><Mail size={16} className="text-slate-400"/> {order.customer_info?.email}</p>
+                             <p className="flex items-start gap-3 pt-2 border-t border-slate-200 mt-2"><MapPin size={16} className="text-slate-400 mt-0.5 shrink-0"/> <span className="flex-1 leading-snug">{order.customer_info?.address}</span></p>
+                           </div>
+                         </div>
+                         <div className="space-y-4">
+                           <h4 className="text-sm font-bold text-slate-700 flex items-center gap-2"><Package size={16} className="text-pink-500" /> Productos a preparar</h4>
+                           <div className="space-y-3">
+                             {storeItems.map((item, idx) => {
+                               const originalProduct = products.find(p => p.id === item.product_id);
+                               return (
+                                 <div key={idx} className="flex justify-between items-center bg-[#faf9f8] p-3 rounded-2xl text-sm border border-slate-100">
+                                   <div className="flex items-center gap-3">
+                                     <div className="w-10 h-10 bg-slate-200 rounded-lg flex items-center justify-center overflow-hidden">
+                                       {originalProduct?.image_url ? <img src={originalProduct.image_url} className="w-full h-full object-cover" /> : '📦'}
+                                     </div>
+                                     <div>
+                                       <p className="font-bold text-slate-800 line-clamp-1">{item.name}</p>
+                                       {item.combo !== 'default' && <p className="text-[10px] text-white bg-slate-800 px-2 py-0.5 rounded-md mt-0.5 font-bold inline-block">{item.combo}</p>}
+                                     </div>
+                                   </div>
+                                   <div className="text-right">
+                                     <p className="font-black text-slate-800">x{item.quantity}</p>
+                                     <p className="text-[10px] font-bold text-slate-400">${item.price}</p>
+                                   </div>
+                                 </div>
+                               );
+                             })}
+                           </div>
+                           <div className="flex justify-between items-center pt-2 px-1">
+                             <span className="text-sm font-bold text-slate-400">Total de esta orden:</span>
+                             <span className="text-lg font-black text-pink-500">${storeTotal.toFixed(2)}</span>
+                           </div>
+                         </div>
+                      </div>
+                      <div className="pt-4 border-t border-slate-50 flex justify-end items-center">
+                        {order.status === 'enviado' && order.shipping_receipt_url ? (
+                          <a href={order.shipping_receipt_url} target="_blank" rel="noreferrer" className="text-sm font-bold text-pink-500 hover:underline flex items-center gap-2">
+                            <FileText size={16} /> Ver guía de envío subida
+                          </a>
+                        ) : (
+                          <button onClick={() => handleOpenReceiptModal(order.id)} className="bg-slate-800 text-white font-bold py-3.5 px-6 rounded-xl hover:bg-slate-700 transition-colors flex items-center gap-2 shadow-md hover:-translate-y-0.5">
+                            <UploadCloud size={18} /> Subir Guía y Enviar
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         ) : activeTab === 'productos' ? (
           <div className="animate-in fade-in duration-300">
@@ -300,7 +498,7 @@ export default function AdminDashboard() {
           <div className="max-w-3xl animate-in slide-in-from-right-8 duration-300">
             <div className="flex items-center justify-between mb-8">
               <h1 className="text-3xl font-extrabold text-slate-800">{editingProductId ? 'Editar Producto' : 'Crear Nuevo Producto'}</h1>
-              {editingProductId && <button onClick={handleCancelEdit} className="text-slate-400 hover:text-slate-600 font-bold text-sm bg-white px-4 py-2 rounded-xl shadow-sm border border-slate-100">Cancelar</button>}
+              {editingProductId && <button type="button" onClick={handleCancelEdit} className="text-slate-400 hover:text-slate-600 font-bold text-sm bg-white px-4 py-2 rounded-xl shadow-sm border border-slate-100">Cancelar</button>}
             </div>
             <form onSubmit={handleSaveProduct} className="bg-white rounded-[2.5rem] p-8 shadow-sm border border-slate-100 space-y-6">
               
@@ -323,30 +521,50 @@ export default function AdminDashboard() {
               </div>
 
               <div className="grid grid-cols-2 gap-6">
-                <div className="col-span-2"><label className="block text-sm font-bold text-slate-700 mb-2">Nombre del producto</label><input type="text" required value={newProduct.name} onChange={e => setNewProduct({...newProduct, name: e.target.value})} className="w-full px-4 py-3 rounded-xl bg-slate-50 border border-slate-200 outline-none focus:border-pink-300 focus:bg-white transition-all font-medium" /></div>
-                <div className="col-span-2"><label className="block text-sm font-bold text-slate-700 mb-2">Descripción breve</label><input type="text" value={newProduct.description} onChange={e => setNewProduct({...newProduct, description: e.target.value})} className="w-full px-4 py-3 rounded-xl bg-slate-50 border border-slate-200 outline-none focus:border-pink-300 focus:bg-white transition-all font-medium" /></div>
-                <div><label className="block text-sm font-bold text-slate-700 mb-2">Precio ($)</label><input type="number" step="0.01" required value={newProduct.price} onChange={e => setNewProduct({...newProduct, price: e.target.value})} className="w-full px-4 py-3 rounded-xl bg-slate-50 border border-slate-200 outline-none focus:border-pink-300 focus:bg-white transition-all font-medium" /></div>
+                <div className="col-span-2"><label className="block text-sm font-bold text-slate-700 mb-2">Nombre del producto</label><input type="text" required value={newProduct.name || ''} onChange={e => setNewProduct({...newProduct, name: e.target.value})} className="w-full px-4 py-3 rounded-xl bg-slate-50 border border-slate-200 outline-none focus:border-pink-300 focus:bg-white transition-all font-medium" /></div>
+                <div className="col-span-2"><label className="block text-sm font-bold text-slate-700 mb-2">Descripción breve</label><input type="text" value={newProduct.description || ''} onChange={e => setNewProduct({...newProduct, description: e.target.value})} className="w-full px-4 py-3 rounded-xl bg-slate-50 border border-slate-200 outline-none focus:border-pink-300 focus:bg-white transition-all font-medium" /></div>
+                <div><label className="block text-sm font-bold text-slate-700 mb-2">Precio ($)</label><input type="number" step="0.01" min="0" required value={newProduct.price || ''} onChange={e => setNewProduct({...newProduct, price: e.target.value})} className="w-full px-4 py-3 rounded-xl bg-slate-50 border border-slate-200 outline-none focus:border-pink-300 focus:bg-white transition-all font-medium" /></div>
                 <div>
                   <label className="block text-sm font-bold text-slate-700 mb-2">{hasVariants ? 'Stock (Automático)' : 'Stock General'}</label>
-                  <input type="number" value={newProduct.stock} onChange={e => setNewProduct({...newProduct, stock: e.target.value})} disabled={hasVariants} className={`w-full px-4 py-3 rounded-xl border border-slate-200 outline-none transition-all font-medium ${hasVariants ? 'bg-slate-200 text-slate-500 cursor-not-allowed opacity-70' : 'bg-slate-50 focus:border-pink-300 focus:bg-white'}`} />
+                  <input type="number" min="0" value={newProduct.stock || 0} onChange={e => setNewProduct({...newProduct, stock: e.target.value})} disabled={hasVariants} className={`w-full px-4 py-3 rounded-xl border border-slate-200 outline-none transition-all font-medium ${hasVariants ? 'bg-slate-200 text-slate-500 cursor-not-allowed opacity-70' : 'bg-slate-50 focus:border-pink-300 focus:bg-white'}`} />
                 </div>
               </div>
 
+              {/* SECCIÓN DE VARIANTES BLINDADA */}
               <div className="pt-6 border-t border-slate-100">
                 <h3 className="font-bold text-slate-800 mb-4 flex items-center gap-2"><Settings size={18}/> Opciones y Variantes</h3>
+                
                 <div className="flex gap-3 mb-6">
-                  <input type="text" placeholder="Opción (ej. Talla)" value={optionName} onChange={e => setOptionName(e.target.value)} className="w-1/3 px-4 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-sm font-medium outline-none" />
-                  <input type="text" placeholder="Valores (S, M, L)" value={optionValues} onChange={e => setOptionValues(e.target.value)} className="flex-1 px-4 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-sm font-medium outline-none" />
-                  <button onClick={handleAddOption} className="bg-slate-800 text-white px-4 rounded-xl font-bold hover:bg-slate-700 text-sm">Agregar</button>
+                  <input type="text" placeholder="Opción (ej. Talla)" value={optionName} onChange={e => setOptionName(e.target.value)} className="w-1/3 px-4 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-sm font-medium outline-none focus:border-pink-300" />
+                  <input type="text" placeholder="Valores (S, M, L)" value={optionValues} onChange={e => setOptionValues(e.target.value)} className="flex-1 px-4 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-sm font-medium outline-none focus:border-pink-300" />
+                  <button type="button" onClick={handleAddOption} className="bg-slate-800 text-white px-4 rounded-xl font-bold hover:bg-slate-700 text-sm">Agregar</button>
                 </div>
+
+                {/* AQUÍ ESTABA EL ERROR 2: ¡No mostrábamos las opciones existentes para borrarlas! */}
+                {Object.keys(newProduct.options || {}).length > 0 && (
+                  <div className="mb-6 space-y-2">
+                    {Object.entries(newProduct.options || {}).map(([optName, optVals]) => (
+                      <div key={optName} className="flex items-center justify-between bg-slate-50 p-3 rounded-xl border border-slate-100">
+                        <div>
+                          <span className="font-bold text-slate-700 text-sm mr-2">{optName}:</span>
+                          <span className="text-slate-500 text-sm">{Array.isArray(optVals) ? optVals.join(', ') : ''}</span>
+                        </div>
+                        <button type="button" onClick={() => handleRemoveOption(optName)} className="p-2 text-red-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors">
+                          <Trash2 size={16} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
                 {Object.keys(newProduct.variant_stock || {}).length > 0 && (
-                  <div className="mt-6">
-                    <h4 className="text-sm font-bold text-slate-700 mb-3">Inventario por Variante</h4>
-                    <div className="grid grid-cols-2 gap-3">
-                      {Object.entries(newProduct.variant_stock).map(([comboKey, stockVal]) => (
-                        <div key={comboKey} className="flex items-center gap-3">
-                          <span className="text-xs font-bold text-slate-500 w-1/2 text-right">{comboKey}</span>
-                          <input type="number" placeholder="Cantidad" value={stockVal} onChange={e => setNewProduct(prev => ({...prev, variant_stock: {...prev.variant_stock, [comboKey]: e.target.value}}))} className="w-1/2 px-3 py-2 rounded-lg bg-slate-50 border border-slate-200 text-sm font-medium outline-none focus:border-pink-300" />
+                  <div className="mt-6 border-t border-slate-100 pt-6">
+                    <h4 className="text-sm font-bold text-slate-700 mb-4">Inventario por Variante</h4>
+                    <div className="grid grid-cols-2 gap-4">
+                      {Object.entries(newProduct.variant_stock || {}).map(([comboKey, stockVal]) => (
+                        <div key={comboKey} className="flex items-center gap-3 bg-slate-50 p-3 rounded-xl border border-slate-100">
+                          <span className="text-xs font-bold text-slate-600 w-1/2 line-clamp-1" title={comboKey}>{comboKey}</span>
+                          <input type="number" placeholder="0" value={stockVal || ''} onChange={e => setNewProduct(prev => ({...prev, variant_stock: {...(prev.variant_stock || {}), [comboKey]: e.target.value}}))} className="w-1/2 px-3 py-2 rounded-lg bg-white border border-slate-200 text-sm font-medium outline-none focus:border-pink-300 shadow-sm" />
                         </div>
                       ))}
                     </div>
@@ -402,12 +620,99 @@ export default function AdminDashboard() {
                 <div className="col-span-2"><label className="block text-sm font-bold text-slate-700 mb-2">Nombre de la Tienda</label><input type="text" required value={storeSettings.name} onChange={e => setStoreSettings({...storeSettings, name: e.target.value})} className="w-full px-4 py-3 rounded-xl bg-slate-50 border border-slate-200 outline-none focus:border-pink-300" /></div>
                 <div className="col-span-2"><label className="block text-sm font-bold text-slate-700 mb-2">Categoría</label><input type="text" required value={storeSettings.type} onChange={e => setStoreSettings({...storeSettings, type: e.target.value})} className="w-full px-4 py-3 rounded-xl bg-slate-50 border border-slate-200 outline-none focus:border-pink-300" /></div>
               </div>
-              <button type="submit" disabled={isSubmitting} className="bg-slate-800 text-white font-bold py-3.5 px-8 rounded-xl hover:bg-slate-700 transition-all flex items-center gap-2">
-                {isSubmitting ? <Loader2 className="animate-spin" size={18} /> : <Save size={18} />} Guardar Identidad
-              </button>
+
+              <div className="pt-6 border-t border-slate-100">
+                <h3 className="text-sm font-bold text-slate-700 mb-4 flex items-center gap-2"><Palette size={18} className="text-pink-500" /> Tema de la Tienda</h3>
+                <div className="grid grid-cols-2 gap-4">
+                  <div 
+                    onClick={() => setStoreSettings({ ...storeSettings, template_id: 'default' })}
+                    className={`cursor-pointer rounded-2xl border-2 p-4 transition-all flex flex-col items-center gap-2 ${storeSettings.template_id === 'default' ? 'border-pink-500 bg-pink-50' : 'border-slate-200 hover:border-pink-300 bg-white'}`}
+                  >
+                    <div className="w-full h-16 bg-white rounded-xl shadow-sm border border-slate-100 flex flex-col overflow-hidden">
+                      <div className="w-full h-4 bg-slate-100 mb-1"></div>
+                      <div className="w-full flex-1 flex gap-1 p-1">
+                        <div className="w-1/3 h-full bg-slate-50 rounded-md"></div>
+                        <div className="flex-1 h-full bg-slate-50 rounded-md"></div>
+                      </div>
+                    </div>
+                    <span className={`text-sm font-bold ${storeSettings.template_id === 'default' ? 'text-pink-600' : 'text-slate-600'}`}>Moderna</span>
+                  </div>
+
+                  <div 
+                    onClick={() => setStoreSettings({ ...storeSettings, template_id: 'pixel' })}
+                    className={`cursor-pointer rounded-2xl border-2 p-4 transition-all flex flex-col items-center gap-2 ${storeSettings.template_id === 'pixel' ? 'border-pink-500 bg-pink-50' : 'border-slate-200 hover:border-pink-300 bg-white'}`}
+                  >
+                    <div className="w-full h-16 bg-white border-2 border-black shadow-[2px_2px_0_0_#000] flex flex-col overflow-hidden">
+                      <div className="w-full h-4 bg-[#87CEEB] border-b-2 border-black"></div>
+                      <div className="w-full flex-1 flex p-1">
+                        <div className="flex-1 h-full border-2 border-black"></div>
+                      </div>
+                    </div>
+                    <span className={`text-sm font-bold ${storeSettings.template_id === 'pixel' ? 'text-pink-600' : 'text-slate-600'}`}>Retro 8-Bit</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="pt-4 flex justify-end">
+                <button type="submit" disabled={isSubmitting} className="bg-slate-800 text-white font-bold py-3.5 px-8 rounded-xl hover:bg-slate-700 transition-all flex items-center gap-2 shadow-md hover:-translate-y-0.5">
+                  {isSubmitting ? <Loader2 className="animate-spin" size={18} /> : <Save size={18} />} Guardar Configuración
+                </button>
+              </div>
             </form>
           </div>
         ) : null}
+
+        {isReceiptModalOpen && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+            <div className="bg-white rounded-[2rem] w-full max-w-md p-8 shadow-2xl relative animate-in zoom-in-95 duration-200">
+              <button onClick={handleCloseReceiptModal} className="absolute top-6 right-6 text-slate-400 hover:text-slate-700 transition-colors">
+                <X size={24} />
+              </button>
+              
+              <div className="w-16 h-16 bg-emerald-100 text-emerald-500 rounded-2xl flex items-center justify-center mb-6 shadow-sm">
+                <Truck size={32} />
+              </div>
+              
+              <h2 className="text-2xl font-extrabold text-slate-800 mb-2">Confirmar Envío</h2>
+              <p className="text-sm text-slate-500 mb-6">Sube una foto de la guía o recibo de la agencia de envíos. El cliente podrá verla desde su perfil y sentirá paz mental.</p>
+
+              <div 
+                onClick={() => receiptInputRef.current?.click()}
+                className={`w-full h-40 rounded-[1.5rem] border-2 border-dashed flex flex-col items-center justify-center cursor-pointer transition-all overflow-hidden mb-6 ${receiptPreview ? 'border-transparent bg-slate-100' : 'border-slate-300 bg-slate-50 hover:bg-emerald-50 hover:border-emerald-300 hover:text-emerald-600 text-slate-400'}`}
+              >
+                {receiptPreview ? (
+                  <img src={receiptPreview} className="w-full h-full object-contain" alt="Preview" />
+                ) : (
+                  <>
+                    <FileText size={32} className="mb-2" />
+                    <span className="font-medium text-sm px-4 text-center">Haz clic para subir la foto de la guía</span>
+                  </>
+                )}
+                <input 
+                  type="file" 
+                  className="hidden" 
+                  ref={receiptInputRef} 
+                  accept="image/*" 
+                  onChange={(e) => { 
+                    if (e.target.files && e.target.files[0]) { 
+                      setReceiptFile(e.target.files[0]); 
+                      setReceiptPreview(URL.createObjectURL(e.target.files[0])); 
+                    } 
+                  }} 
+                />
+              </div>
+
+              <button 
+                onClick={handleConfirmShipment}
+                disabled={isSubmitting || !receiptFile}
+                className="w-full bg-slate-800 text-white font-bold py-4 rounded-xl hover:bg-slate-700 transition-all flex items-center justify-center gap-2 shadow-md disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isSubmitting ? <Loader2 className="animate-spin" size={20} /> : <CheckCircle size={20} />} 
+                Confirmar y Notificar
+              </button>
+            </div>
+          </div>
+        )}
       </main>
     </div>
   );

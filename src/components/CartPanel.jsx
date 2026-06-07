@@ -80,8 +80,17 @@ export default function CartPanel() {
             <div className="space-y-6">
               {groupedCart.map((item) => (
                 <div key={item.id} className="flex gap-4 items-start">
-                  <div className={`${item.bg_color || 'bg-slate-50'} w-20 h-20 rounded-2xl flex items-center justify-center text-4xl flex-shrink-0 shadow-sm border border-slate-100/50`}>
-                    {item.icon}
+                  
+                  {/* --- AQUÍ REEMPLAZAMOS EL EMOJI POR LA FOTO O EL CARTEL DIVERTIDO --- */}
+                  <div className={`w-20 h-20 rounded-2xl overflow-hidden flex-shrink-0 shadow-sm relative ${item.image_url ? 'bg-slate-100 border border-slate-100' : 'bg-slate-50 border-2 border-dashed border-slate-200'}`}>
+                    {item.image_url ? (
+                      <img src={item.image_url} alt={item.name} className="w-full h-full object-cover" />
+                    ) : (
+                      <div className="flex flex-col items-center justify-center p-1 text-center w-full h-full">
+                        <span className="text-[8px] font-bold text-slate-400 mb-0.5 leading-tight">Ups aqui deberia haber una foto hermosa...</span>
+                        <span className="text-[6px] text-slate-400/80 font-medium">alguien sera despedido hoy</span>
+                      </div>
+                    )}
                   </div>
                   
                   <div className="flex-1 min-w-0">

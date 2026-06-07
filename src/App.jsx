@@ -13,14 +13,16 @@ import Login from './pages/Login';
 import AdminDashboard from './pages/AdminDashboard'; // Pon esto arriba con los imports
 import SearchProducts from './pages/SearchProducts';
 import UserProfile from './pages/UserProfile';
+import { AuthProvider } from './context/AuthContext';
 
 export default function App() {
   return (
-    <FavoritesProvider> {/* 3. Envolvemos la app en el FavoritesProvider */}
-      <CartProvider>
-        <BrowserRouter>
-          <CartPanel /> 
-          <Routes>
+    <AuthProvider>
+       <FavoritesProvider> {/* 3. Envolvemos la app en el FavoritesProvider */}
+         <CartProvider>
+          <BrowserRouter>
+           <CartPanel /> 
+            <Routes>
             <Route path="/" element={<Home />} />
             <Route path="/explorar-tiendas" element={<ExploreStores />} />
             <Route path="/tienda/:storeSlug" element={<StoreCatalog />} />
@@ -31,9 +33,11 @@ export default function App() {
             <Route path="/admin" element={<AdminDashboard />} />
             <Route path="/buscar" element={<SearchProducts />} />
             <Route path="/perfil" element={<UserProfile />} />
-          </Routes>
-        </BrowserRouter>
-      </CartProvider>
-    </FavoritesProvider>
+            <Route path="/admin/:tab?" element={<AdminDashboard />} />
+            </Routes>
+          </BrowserRouter>
+        </CartProvider>
+      </FavoritesProvider>
+    </AuthProvider>
   );
 }

@@ -24,7 +24,6 @@ export default function Checkout() {
     });
   }, []);
 
-  // ¡CORRECCIÓN MAESTRA! Ya no agrupamos a la fuerza, usamos el carrito real
   const orderItems = cart;
   const totalAmount = getCartTotal();
 
@@ -50,47 +49,25 @@ export default function Checkout() {
           product_id: item.originalId || item.id,
           name: item.name,
           combo: comboKey,
-          quantity: item.quantity, // ¡Aquí lee la cantidad real (ej: 5, 10, etc)!
+          quantity: item.quantity,
           price: item.price,
           store_id: item.store_id
         };
       });
 
-      // DEDUCIR INVENTARIO MATEMÁTICO
-      for (const item of itemsToSave) {
-        const { data: product } = await supabase
-          .from('products')
-          .select('stock, variant_stock')
-          .eq('id', item.product_id)
-          .single();
+      // ==========================================
+      // MAGIA ATÓMICA: Llamada a la función RPC
+      // ==========================================
+      const { data: orderId, error: rpcError } = await supabase.rpc('process_checkout', {
+        p_user_id: userId,
+        p_customer_info: customerInfo,
+        p_items: itemsToSave,
+      });
 
-        if (product) {
-          let newStock = Number(product.stock) || 0;
-          let newVariantStock = { ...product.variant_stock };
-
-          if (item.combo !== 'default' && newVariantStock[item.combo] !== undefined) {
-            newVariantStock[item.combo] = Math.max(0, Number(newVariantStock[item.combo]) - item.quantity);
-          } else {
-            newStock = Math.max(0, newStock - item.quantity);
-          }
-
-          await supabase
-            .from('products')
-            .update({ stock: newStock, variant_stock: newVariantStock })
-            .eq('id', item.product_id);
-        }
+      // Si la base de datos detecta falta de stock, lanzará el error aquí
+      if (rpcError) {
+        throw new Error(rpcError.message || "Error al procesar el checkout");
       }
-
-      // CREAR EL RECIBO DE LA ORDEN
-      const { error: orderError } = await supabase.from('orders').insert([{
-        user_id: userId,
-        total: totalAmount,
-        items: itemsToSave,
-        customer_info: customerInfo,
-        status: 'pagado'
-      }]);
-
-      if (orderError) throw orderError;
 
       clearCart();
       alert(`¡Gracias por tu compra, ${customerInfo.name}! Tu pedido está en camino.`);
@@ -100,7 +77,8 @@ export default function Checkout() {
 
     } catch (err) {
       console.error("Error procesando pago:", err);
-      alert("Ocurrió un error al procesar tu orden.");
+      // Mostramos el mensaje exacto que nos devuelva el "RAISE EXCEPTION" de la base de datos
+      alert(err.message || "Ocurrió un error al procesar tu orden.");
     } finally {
       setIsProcessing(false);
     }
@@ -178,11 +156,20 @@ export default function Checkout() {
               <div className="space-y-6">
                 {orderItems.map((item) => (
                   <div key={item.id} className="flex items-center gap-4 pb-6 border-b border-slate-50 last:border-0 last:pb-0">
-                    <div className={`w-16 h-16 ${item.bg_color || 'bg-slate-50'} rounded-2xl flex items-center justify-center text-3xl border border-slate-100`}>
-                      {item.icon || '📦'}
+                    
+                    {/* ADIÓS EMOJI: Hola foto real del producto */}
+                    <div className="w-16 h-16 rounded-2xl overflow-hidden flex-shrink-0 shadow-sm relative bg-slate-50 border border-slate-100">
+                      {item.image_url ? (
+                        <img src={item.image_url} alt={item.name} className="w-full h-full object-cover" />
+                      ) : (
+                        <div className="flex flex-col items-center justify-center p-1 text-center w-full h-full">
+                          <span className="text-[7px] font-bold text-slate-400 mb-0.5 leading-tight">Sin foto</span>
+                        </div>
+                      )}
                     </div>
-                    <div className="flex-1">
-                      <h4 className="font-bold text-slate-800 leading-snug">{item.name}</h4>
+
+                    <div className="flex-1 min-w-0">
+                      <h4 className="font-bold text-slate-800 leading-snug truncate">{item.name}</h4>
                       {item.selectedOptions && Object.keys(item.selectedOptions).length > 0 && (
                         <p className="text-xs font-medium text-pink-500 mt-0.5 bg-pink-50 inline-block px-2 py-0.5 rounded-md">
                           {Object.values(item.selectedOptions).join(' | ')}
