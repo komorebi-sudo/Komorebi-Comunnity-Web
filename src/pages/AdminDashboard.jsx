@@ -1,12 +1,61 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { useNavigate, Link, useParams } from 'react-router-dom';
 import { supabase } from '../lib/supabaseClient';
-import { Store, Package, Settings, Plus, LogOut, Loader2, Home, User as UserIcon, Edit, Trash2, Save, LayoutDashboard, Search, UploadCloud, ShoppingBag, Truck, MapPin, Phone, Mail, Clock, CheckCircle, X, FileText, Palette } from 'lucide-react';
+import { Store, Package, Settings, Plus, LogOut, Loader2, Home, User as UserIcon, Edit, Trash2, Save, LayoutDashboard, Search, UploadCloud, ShoppingBag, Truck, MapPin, Phone, Mail, Clock, CheckCircle, X, FileText, Palette, TrendingUp } from 'lucide-react';
+
+// LIBRERÍA DE GRÁFICAS
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
+
+// NUEVO: LIBRERÍA DE COMPRESIÓN DE IMÁGENES
+import imageCompression from 'browser-image-compression';
+
+// --- COMPONENTES AUXILIARES PARA LIMPIAR EL CÓDIGO ---
+
+const StatCard = ({ title, value, icon: Icon, color, textColor }) => (
+  <div className="bg-white p-6 rounded-[2rem] shadow-sm border border-slate-100 flex items-center justify-between hover:shadow-md transition-shadow">
+    <div>
+      <p className="text-slate-400 font-bold text-sm mb-1 uppercase tracking-wider">{title}</p>
+      <p className="text-4xl font-black text-slate-800">{value}</p>
+    </div>
+    <div className={`w-14 h-14 ${color} ${textColor} rounded-2xl flex items-center justify-center`}>
+      <Icon size={24} strokeWidth={2.5}/>
+    </div>
+  </div>
+);
+
+const AdminSidebar = ({ store, activeTab, navigate, handleLogout, pendingOrdersCount }) => (
+  <aside className="w-64 bg-white border-r border-slate-100 flex flex-col fixed h-full z-10 shadow-sm">
+    <div className="p-6 border-b border-slate-100 flex items-center gap-3">
+      <div className="w-8 h-8 bg-slate-800 rounded-lg flex items-center justify-center text-white overflow-hidden font-bold shadow-inner">
+        {store?.avatar_url ? <img src={store.avatar_url} className="w-full h-full object-cover" /> : store?.name?.charAt(0).toUpperCase() || 'K'}
+      </div>
+      <span className="font-bold text-slate-800 truncate">{store ? store.name : 'Creador'}</span>
+    </div>
+    {store && (
+      <nav className="flex-1 p-4 space-y-1">
+        <button onClick={() => navigate('/admin/resumen')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl font-medium transition-all ${activeTab === 'resumen' ? 'bg-pink-50 text-pink-600' : 'text-slate-500 hover:bg-slate-50'}`}><LayoutDashboard size={18} /> Resumen</button>
+        <button onClick={() => navigate('/admin/productos')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl font-medium transition-all ${activeTab === 'productos' ? 'bg-pink-50 text-pink-600' : 'text-slate-500 hover:bg-slate-50'}`}><Package size={18} /> Mis Productos</button>
+        <button onClick={() => navigate('/admin/ventas')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl font-medium transition-all ${activeTab === 'ventas' ? 'bg-pink-50 text-pink-600' : 'text-slate-500 hover:bg-slate-50'}`}>
+          <ShoppingBag size={18} /> Mis Ventas 
+          {pendingOrdersCount > 0 && <span className="ml-auto bg-pink-500 text-white text-[10px] px-2 py-0.5 rounded-full shadow-sm">{pendingOrdersCount}</span>}
+        </button>
+        <button onClick={() => navigate('/admin/configuracion')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl font-medium transition-all ${activeTab === 'configuracion' ? 'bg-pink-50 text-pink-600' : 'text-slate-500 hover:bg-slate-50'}`}><Settings size={18} /> Configuración</button>
+      </nav>
+    )}
+    <div className="p-4 border-t border-slate-100 space-y-1">
+      <Link to="/" className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl font-medium text-slate-500 hover:bg-slate-50 hover:text-slate-800 transition-all"><Home size={18} /> Ir de compras</Link>
+      <Link to="/perfil" className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl font-medium text-slate-500 hover:bg-slate-50 hover:text-slate-800 transition-all"><UserIcon size={18} /> Mi Perfil</Link>
+      <button onClick={handleLogout} className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl font-medium text-red-400 hover:bg-red-50 hover:text-red-500 transition-all mt-2"><LogOut size={18} /> Salir</button>
+    </div>
+  </aside>
+);
+
+// --- COMPONENTE PRINCIPAL ---
 
 export default function AdminDashboard() {
   const navigate = useNavigate();
-  const { tab } = useParams(); // Leemos la pestaña de la URL
-  const activeTab = tab || 'resumen'; // Si no hay tab, usamos 'resumen'
+  const { tab } = useParams();
+  const activeTab = tab || 'resumen';
 
   const [session, setSession] = useState(null);
   const [store, setStore] = useState(null);
@@ -38,7 +87,6 @@ export default function AdminDashboard() {
   const [receiptPreview, setReceiptPreview] = useState(null);
   const receiptInputRef = useRef(null);
 
-  // Redirección si la URL es /admin vacío
   useEffect(() => {
     if (!tab) navigate('/admin/resumen', { replace: true });
   }, [tab, navigate]);
@@ -131,13 +179,35 @@ export default function AdminDashboard() {
     }
   }, [newProduct.variant_stock]);
 
+  // --- MOTOR DE COMPRESIÓN DE IMÁGENES INYECTADO AQUÍ ---
   const uploadImage = async (file, pathPrefix) => {
     if (!file) return null;
-    const fileExt = file.name.split('.').pop();
+
+    // Configuración de la compresión web
+    const options = {
+      maxSizeMB: 0.1, // Máximo 100 KB para que sea súper ligero
+      maxWidthOrHeight: 1024, // Recorta a 1024px máximo
+      useWebWorker: true,
+    };
+
+    let fileToUpload = file;
+    try {
+      // Exprime la imagen antes de subirla
+      fileToUpload = await imageCompression(file, options);
+      console.log(`Foto exprimida: de ${(file.size / 1024 / 1024).toFixed(2)} MB a ${(fileToUpload.size / 1024 / 1024).toFixed(2)} MB`);
+    } catch (error) {
+      console.warn("Hubo un pequeño error exprimiendo, se subirá la original:", error);
+    }
+
+    // Le sacamos la extensión o le asignamos jpeg por defecto si el compresor la ocultó
+    const fileExt = fileToUpload.name.split('.').pop() || 'jpeg';
     const fileName = `${pathPrefix}-${Date.now()}.${fileExt}`;
     const filePath = `${session.user.id}/${fileName}`;
-    const { error: uploadError } = await supabase.storage.from('images').upload(filePath, file);
+    
+    // Subimos la imagen ya comprimida a Supabase
+    const { error: uploadError } = await supabase.storage.from('images').upload(filePath, fileToUpload);
     if (uploadError) throw uploadError;
+    
     const { data } = supabase.storage.from('images').getPublicUrl(filePath);
     return data.publicUrl;
   };
@@ -198,7 +268,6 @@ export default function AdminDashboard() {
         finalImageUrl = await uploadImage(productImageFile, 'product');
       }
 
-      // 1. Blindamos el objeto y evitamos mandar datos nulos que crashean la DB
       const productData = {
         name: newProduct.name, 
         slug: newProduct.name.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
@@ -211,12 +280,10 @@ export default function AdminDashboard() {
       };
 
       if (editingProductId) {
-        // 2. Al editar, NO enviamos el store_id para evitar conflictos de seguridad
         const { error } = await supabase.from('products').update(productData).eq('id', editingProductId);
         if (error) throw error;
         setProducts(products.map(p => p.id === editingProductId ? { ...p, ...productData } : p));
       } else {
-        // 3. Al crear, sí es obligatorio enlazarlo a la tienda
         productData.store_id = store.id;
         const { data, error } = await supabase.from('products').insert([productData]).select();
         if (error) throw error;
@@ -227,9 +294,8 @@ export default function AdminDashboard() {
       setEditingProductId(null);
       setProductImageFile(null);
       setProductImagePreview(null);
-      setActiveTab('productos');
+      navigate('/admin/productos');
     } catch (err) { 
-      // 4. Ahora la alerta nos gritará el error exacto
       console.error("Error real de Supabase:", err);
       alert(`Error del servidor: ${err.message || 'Desconocido'}`); 
     } finally { 
@@ -246,7 +312,6 @@ export default function AdminDashboard() {
     } catch (err) { alert("Error al eliminar"); }
   };
 
-  // MAGIA ANTI-CRASH: Sanitizamos la información antes de editar
   const handleEditClick = (product) => {
     setNewProduct({
       name: product.name || '',
@@ -262,7 +327,7 @@ export default function AdminDashboard() {
     setEditingProductId(product.id);
     setProductImagePreview(product.image_url || null);
     setProductImageFile(null);
-    setActiveTab('nuevo-producto');
+    navigate('/admin/nuevo-producto');
   };
 
   const handleCancelEdit = () => {
@@ -270,7 +335,7 @@ export default function AdminDashboard() {
     setEditingProductId(null);
     setProductImageFile(null);
     setProductImagePreview(null);
-    setActiveTab('productos');
+    navigate('/admin/productos');
   };
 
   const handleOpenReceiptModal = (orderId) => {
@@ -321,32 +386,18 @@ export default function AdminDashboard() {
 
   const hasVariants = Object.keys(newProduct.variant_stock || {}).length > 0;
 
+  // Lógica de Gráfica: Calculamos los productos más vendidos
+  const salesData = products.map(p => {
+    const totalSold = orders.reduce((sum, order) => {
+      const item = order.items?.find(i => i.product_id === p.id);
+      return sum + (item ? item.quantity : 0);
+    }, 0);
+    return { name: p.name.substring(0, 15) + (p.name.length > 15 ? '...' : ''), ventas: totalSold };
+  }).sort((a, b) => b.ventas - a.ventas).slice(0, 5); // Tomamos el Top 5
+
   return (
     <div className="min-h-screen bg-[#faf9f8] text-slate-700 flex">
-      <aside className="w-64 bg-white border-r border-slate-100 flex flex-col fixed h-full z-10 shadow-sm">
-        <div className="p-6 border-b border-slate-100 flex items-center gap-3">
-          <div className="w-8 h-8 bg-slate-800 rounded-lg flex items-center justify-center text-white overflow-hidden font-bold">
-            {store?.avatar_url ? <img src={store.avatar_url} className="w-full h-full object-cover" /> : store?.name?.charAt(0).toUpperCase() || 'K'}
-          </div>
-          <span className="font-bold text-slate-800 truncate">{store ? store.name : 'Creador'}</span>
-        </div>
-        {store && (
-          <nav className="flex-1 p-4 space-y-1">
-            <button onClick={() => navigate('/admin/resumen')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl font-medium transition-all ${activeTab === 'resumen' ? 'bg-pink-50 text-pink-600' : 'text-slate-500 hover:bg-slate-50'}`}><LayoutDashboard size={18} /> Resumen</button>
-            <button onClick={() => navigate('/admin/productos')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl font-medium transition-all ${activeTab === 'productos' ? 'bg-pink-50 text-pink-600' : 'text-slate-500 hover:bg-slate-50'}`}><Package size={18} /> Mis Productos</button>
-            <button onClick={() => navigate('/admin/ventas')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl font-medium transition-all ${activeTab === 'ventas' ? 'bg-pink-50 text-pink-600' : 'text-slate-500 hover:bg-slate-50'}`}>
-              <ShoppingBag size={18} /> Mis Ventas 
-              {pendingOrdersCount > 0 && <span className="ml-auto bg-pink-500 text-white text-[10px] px-2 py-0.5 rounded-full">{pendingOrdersCount}</span>}
-            </button>
-            <button onClick={() => navigate('/admin/configuracion')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl font-medium transition-all ${activeTab === 'configuracion' ? 'bg-pink-50 text-pink-600' : 'text-slate-500 hover:bg-slate-50'}`}><Settings size={18} /> Configuración</button>
-          </nav>
-        )}
-        <div className="p-4 border-t border-slate-100 space-y-1">
-          <Link to="/" className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl font-medium text-slate-500 hover:bg-slate-50 hover:text-slate-800 transition-all"><Home size={18} /> Ir de compras</Link>
-          <Link to="/perfil" className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl font-medium text-slate-500 hover:bg-slate-50 hover:text-slate-800 transition-all"><UserIcon size={18} /> Mi Perfil</Link>
-          <button onClick={handleLogout} className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl font-medium text-red-400 hover:bg-red-50 hover:text-red-500 transition-all mt-2"><LogOut size={18} /> Salir</button>
-        </div>
-      </aside>
+      <AdminSidebar store={store} activeTab={activeTab} navigate={navigate} handleLogout={handleLogout} pendingOrdersCount={pendingOrdersCount} />
 
       <main className="ml-64 flex-1 p-8 md:p-12">
         {!store ? (
@@ -361,19 +412,36 @@ export default function AdminDashboard() {
           </div>
         ) : activeTab === 'resumen' ? (
           <div className="animate-in fade-in duration-300">
-            <h1 className="text-3xl font-extrabold text-slate-800 mb-8">Resumen de {store.name}</h1>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
-              <div className="bg-white p-6 rounded-[2rem] shadow-sm border border-slate-100 flex items-center justify-between">
-                <div><p className="text-slate-400 font-bold text-sm mb-1 uppercase tracking-wider">Productos</p><p className="text-4xl font-black text-slate-800">{products.length}</p></div>
-                <div className="w-14 h-14 bg-blue-50 rounded-2xl flex items-center justify-center text-blue-500"><Package size={24} strokeWidth={2.5}/></div>
-              </div>
-              <div className="bg-white p-6 rounded-[2rem] shadow-sm border border-slate-100 flex items-center justify-between">
-                <div><p className="text-slate-400 font-bold text-sm mb-1 uppercase tracking-wider">Por Enviar</p><p className="text-4xl font-black text-slate-800">{pendingOrdersCount}</p></div>
-                <div className="w-14 h-14 bg-amber-50 rounded-2xl flex items-center justify-center text-amber-500"><Truck size={24} strokeWidth={2.5}/></div>
-              </div>
-              <div className="bg-white p-6 rounded-[2rem] shadow-sm border border-slate-100 flex items-center justify-between">
-                <div><p className="text-slate-400 font-bold text-sm mb-1 uppercase tracking-wider">Ingresos</p><p className="text-4xl font-black text-slate-800">${totalRevenue.toFixed(2)}</p></div>
-                <div className="w-14 h-14 bg-emerald-50 rounded-2xl flex items-center justify-center text-emerald-500"><LayoutDashboard size={24} strokeWidth={2.5}/></div>
+            <h1 className="text-3xl font-extrabold text-slate-800 mb-8 flex items-center gap-3">
+              <TrendingUp className="text-pink-500" size={32} /> Resumen de {store.name}
+            </h1>
+            
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+              <StatCard title="Productos" value={products.length} icon={Package} color="bg-blue-50" textColor="text-blue-500" />
+              <StatCard title="Por Enviar" value={pendingOrdersCount} icon={Truck} color="bg-amber-50" textColor="text-amber-500" />
+              <StatCard title="Ingresos Totales" value={`$${totalRevenue.toFixed(2)}`} icon={LayoutDashboard} color="bg-emerald-50" textColor="text-emerald-500" />
+            </div>
+
+            {/* DASHBOARD VISUAL */}
+            <div className="bg-white p-8 rounded-[2rem] shadow-sm border border-slate-100">
+              <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-6">Top 5 Productos más vendidos</h3>
+              <div className="h-72 w-full">
+                {salesData.length > 0 && salesData.some(d => d.ventas > 0) ? (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={salesData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                      <XAxis dataKey="name" tick={{ fontSize: 12, fill: '#64748b' }} axisLine={false} tickLine={false} />
+                      <YAxis tick={{ fontSize: 12, fill: '#64748b' }} axisLine={false} tickLine={false} />
+                      <Tooltip cursor={{ fill: '#f8fafc' }} contentStyle={{ borderRadius: '1rem', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} />
+                      <Bar dataKey="ventas" fill="#f472b6" radius={[6, 6, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <div className="w-full h-full flex flex-col items-center justify-center text-slate-400 bg-slate-50 rounded-2xl border-2 border-dashed border-slate-200">
+                    <ShoppingBag size={48} className="mb-4 text-slate-300" />
+                    <p className="font-bold">Aún no hay suficientes ventas</p>
+                    <p className="text-sm">Tus métricas aparecerán aquí pronto.</p>
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -464,7 +532,7 @@ export default function AdminDashboard() {
           <div className="animate-in fade-in duration-300">
             <div className="flex items-center justify-between mb-8">
               <h1 className="text-3xl font-extrabold text-slate-800">Tus Productos</h1>
-              <button onClick={() => { setEditingProductId(null); setNewProduct(defaultProductState); setProductImagePreview(null); setActiveTab('nuevo-producto'); }} className="bg-pink-500 text-white px-6 py-3 rounded-2xl font-bold hover:bg-pink-600 transition-all flex items-center gap-2 shadow-md hover:-translate-y-0.5"><Plus size={20} /> Crear Producto</button>
+              <button onClick={() => { setEditingProductId(null); setNewProduct(defaultProductState); setProductImagePreview(null); navigate('/admin/nuevo-producto'); }} className="bg-pink-500 text-white px-6 py-3 rounded-2xl font-bold hover:bg-pink-600 transition-all flex items-center gap-2 shadow-md hover:-translate-y-0.5"><Plus size={20} /> Crear Producto</button>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
               {products.map(p => (
@@ -520,17 +588,41 @@ export default function AdminDashboard() {
                 </div>
               </div>
 
+              {/* FORMULARIO BLINDADO */}
               <div className="grid grid-cols-2 gap-6">
-                <div className="col-span-2"><label className="block text-sm font-bold text-slate-700 mb-2">Nombre del producto</label><input type="text" required value={newProduct.name || ''} onChange={e => setNewProduct({...newProduct, name: e.target.value})} className="w-full px-4 py-3 rounded-xl bg-slate-50 border border-slate-200 outline-none focus:border-pink-300 focus:bg-white transition-all font-medium" /></div>
-                <div className="col-span-2"><label className="block text-sm font-bold text-slate-700 mb-2">Descripción breve</label><input type="text" value={newProduct.description || ''} onChange={e => setNewProduct({...newProduct, description: e.target.value})} className="w-full px-4 py-3 rounded-xl bg-slate-50 border border-slate-200 outline-none focus:border-pink-300 focus:bg-white transition-all font-medium" /></div>
-                <div><label className="block text-sm font-bold text-slate-700 mb-2">Precio ($)</label><input type="number" step="0.01" min="0" required value={newProduct.price || ''} onChange={e => setNewProduct({...newProduct, price: e.target.value})} className="w-full px-4 py-3 rounded-xl bg-slate-50 border border-slate-200 outline-none focus:border-pink-300 focus:bg-white transition-all font-medium" /></div>
+                <div className="col-span-2">
+                  <label className="block text-sm font-bold text-slate-700 mb-2">Nombre del producto</label>
+                  <input type="text" required value={newProduct.name || ''} onChange={e => setNewProduct({...newProduct, name: e.target.value})} className="w-full px-4 py-3 rounded-xl bg-slate-50 border border-slate-200 outline-none focus:border-pink-300 focus:bg-white transition-all font-medium" />
+                </div>
+                <div className="col-span-2">
+                  <label className="block text-sm font-bold text-slate-700 mb-2">Descripción breve</label>
+                  <input type="text" value={newProduct.description || ''} onChange={e => setNewProduct({...newProduct, description: e.target.value})} className="w-full px-4 py-3 rounded-xl bg-slate-50 border border-slate-200 outline-none focus:border-pink-300 focus:bg-white transition-all font-medium" />
+                </div>
+                <div>
+                  <label className="block text-sm font-bold text-slate-700 mb-2">Precio ($)</label>
+                  <input 
+                    type="number" 
+                    step="0.01" 
+                    min="0" 
+                    required 
+                    value={newProduct.price || ''} 
+                    onChange={e => setNewProduct({...newProduct, price: e.target.value})} 
+                    className="w-full px-4 py-3 rounded-xl bg-slate-50 border border-slate-200 outline-none focus:border-pink-300 focus:bg-white transition-all font-medium" 
+                  />
+                </div>
                 <div>
                   <label className="block text-sm font-bold text-slate-700 mb-2">{hasVariants ? 'Stock (Automático)' : 'Stock General'}</label>
-                  <input type="number" min="0" value={newProduct.stock || 0} onChange={e => setNewProduct({...newProduct, stock: e.target.value})} disabled={hasVariants} className={`w-full px-4 py-3 rounded-xl border border-slate-200 outline-none transition-all font-medium ${hasVariants ? 'bg-slate-200 text-slate-500 cursor-not-allowed opacity-70' : 'bg-slate-50 focus:border-pink-300 focus:bg-white'}`} />
+                  <input 
+                    type="number" 
+                    min="0" 
+                    value={newProduct.stock || 0} 
+                    onChange={e => setNewProduct({...newProduct, stock: e.target.value})} 
+                    disabled={hasVariants} 
+                    className={`w-full px-4 py-3 rounded-xl border border-slate-200 outline-none transition-all font-medium ${hasVariants ? 'bg-slate-200 text-slate-500 cursor-not-allowed opacity-70' : 'bg-slate-50 focus:border-pink-300 focus:bg-white'}`} 
+                  />
                 </div>
               </div>
 
-              {/* SECCIÓN DE VARIANTES BLINDADA */}
               <div className="pt-6 border-t border-slate-100">
                 <h3 className="font-bold text-slate-800 mb-4 flex items-center gap-2"><Settings size={18}/> Opciones y Variantes</h3>
                 
@@ -540,7 +632,6 @@ export default function AdminDashboard() {
                   <button type="button" onClick={handleAddOption} className="bg-slate-800 text-white px-4 rounded-xl font-bold hover:bg-slate-700 text-sm">Agregar</button>
                 </div>
 
-                {/* AQUÍ ESTABA EL ERROR 2: ¡No mostrábamos las opciones existentes para borrarlas! */}
                 {Object.keys(newProduct.options || {}).length > 0 && (
                   <div className="mb-6 space-y-2">
                     {Object.entries(newProduct.options || {}).map(([optName, optVals]) => (
@@ -564,7 +655,7 @@ export default function AdminDashboard() {
                       {Object.entries(newProduct.variant_stock || {}).map(([comboKey, stockVal]) => (
                         <div key={comboKey} className="flex items-center gap-3 bg-slate-50 p-3 rounded-xl border border-slate-100">
                           <span className="text-xs font-bold text-slate-600 w-1/2 line-clamp-1" title={comboKey}>{comboKey}</span>
-                          <input type="number" placeholder="0" value={stockVal || ''} onChange={e => setNewProduct(prev => ({...prev, variant_stock: {...(prev.variant_stock || {}), [comboKey]: e.target.value}}))} className="w-1/2 px-3 py-2 rounded-lg bg-white border border-slate-200 text-sm font-medium outline-none focus:border-pink-300 shadow-sm" />
+                          <input type="number" min="0" placeholder="0" value={stockVal || ''} onChange={e => setNewProduct(prev => ({...prev, variant_stock: {...(prev.variant_stock || {}), [comboKey]: e.target.value}}))} className="w-1/2 px-3 py-2 rounded-lg bg-white border border-slate-200 text-sm font-medium outline-none focus:border-pink-300 shadow-sm" />
                         </div>
                       ))}
                     </div>

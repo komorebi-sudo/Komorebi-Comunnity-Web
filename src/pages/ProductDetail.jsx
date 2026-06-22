@@ -5,6 +5,7 @@ import { supabase } from '../lib/supabaseClient';
 import { useCart } from '../context/CartContext';
 import { useFavorites } from '../context/FavoritesContext';
 import { useVariantManager } from '../hooks/useVariantManager';
+import SEO from '../components/ui/SEO';
 
 export default function ProductDetail() {
   const { productSlug } = useParams();
@@ -58,6 +59,12 @@ export default function ProductDetail() {
 
   return (
     <div className="min-h-screen bg-[#faf9f8] text-slate-700 font-sans selection:bg-pink-200 pb-24">
+      <SEO 
+        title={product.name} 
+        description={product.description} 
+        image={product.image_url} 
+        url={window.location.href}
+      />
       <header className="bg-[#faf9f8]/80 backdrop-blur-xl sticky top-0 z-50 border-b border-slate-100">
         <div className="max-w-6xl mx-auto px-6 h-20 flex items-center justify-between">
           <Link to="/" className="flex items-center space-x-3 group">

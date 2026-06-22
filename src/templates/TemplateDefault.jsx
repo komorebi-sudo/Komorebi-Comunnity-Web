@@ -3,11 +3,8 @@ import { Search, Heart, ShoppingBag, User, Store, ArrowLeft, SlidersHorizontal, 
 import { Link } from 'react-router-dom';
 import { useCart } from '../context/CartContext';
 import { useFavorites } from '../context/FavoritesContext';
-import QuickAddPopover from '../components/QuickAddPopover';
 import OptimizedImage from '../components/ui/OptimizedImage';
-
-// IMPORTAMOS NUESTRO OPTIMIZADOR
-import { optimizeImage } from '../utils/imageUtils';
+import ProductCard from '../components/ProductCard';
 
 export default function TemplateDefault({
   store,
@@ -16,9 +13,6 @@ export default function TemplateDefault({
   setSearchTerm,
   activeFilter,
   setActiveFilter,
-  toggleFavorite,
-  isFavorite,
-  addToCart,
   openPopoverId,
   setOpenPopoverId
 }) {
@@ -55,20 +49,15 @@ export default function TemplateDefault({
         </div>
       </header>
 
-      {/* BANNER OPTIMIZADO (Pedimos una imagen ancha: 1200px) */}
+      {/* BANNER OPTIMIZADO */}
       <div className={`w-full h-40 ${store.cover_color || 'bg-slate-100'} border-b border-slate-100 relative overflow-hidden`}>
-        {store.banner_url ? (
-          <img 
-            src={optimizeImage(store.banner_url, 1200)} 
+        <div className="absolute inset-0 z-0">
+          <OptimizedImage 
+            src={store.banner_url} 
             alt={`Banner de ${store.name}`} 
-            className="absolute inset-0 w-full h-full object-cover z-0" 
+            className="w-full h-full object-cover" 
           />
-        ) : (
-          <div className="absolute inset-0 flex flex-col items-center justify-center p-4 text-center border-b border-dashed border-slate-200 bg-slate-50 text-slate-400">
-            <span className="text-sm font-bold mb-1 leading-tight">Ups aqui deberia haber una foto hermosa...</span>
-            <span className="text-xs font-medium opacity-80">alguien sera despedido hoy</span>
-          </div>
-        )}
+        </div>
         <div className="max-w-6xl mx-auto px-6 h-full flex items-end pb-6 relative z-10">
            <Link to="/" className="absolute top-6 left-6 flex items-center bg-white/80 backdrop-blur-md px-3 py-1.5 rounded-full text-xs font-semibold hover:bg-white transition-colors text-slate-700 shadow-sm">
              <ArrowLeft size={14} className="mr-1" /> Volver
@@ -78,12 +67,12 @@ export default function TemplateDefault({
 
       <main className="max-w-6xl mx-auto px-6 flex flex-col md:flex-row gap-10 relative -mt-12">
         
-        {/* AVATAR OPTIMIZADO (Pequeño: 150px) */}
+        {/* AVATAR OPTIMIZADO */}
         <aside className="w-full md:w-72 flex-shrink-0">
           <div className="bg-white rounded-[2rem] p-6 shadow-sm border border-slate-100 mb-8 text-center relative pt-14">
             <div className="absolute -top-10 left-1/2 -translate-x-1/2 w-20 h-20 bg-white rounded-full flex items-center justify-center text-3xl font-black text-slate-300 shadow-sm border-4 border-white overflow-hidden">
               {store.avatar_url ? (
-                <img src={optimizeImage(store.avatar_url, 150)} alt={store.name} className="w-full h-full object-cover" />
+                <OptimizedImage src={store.avatar_url} alt={store.name} className="w-full h-full object-cover" />
               ) : (
                 store.name?.charAt(0).toUpperCase()
               )}
@@ -124,32 +113,17 @@ export default function TemplateDefault({
             <div className="bg-white p-12 rounded-3xl border border-slate-100 text-center text-slate-500 shadow-sm flex flex-col items-center"><Search size={48} className="text-slate-200 mb-4" /><h3 className="text-lg font-bold text-slate-800 mb-2">No encontramos nada</h3></div>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+              
+              {/* MAGIA DE COMPONENTIZACIÓN: Todo se resume a esto 👇 */}
               {processedProducts.map((product) => (
-                <div key={product.id} className="bg-white rounded-[2rem] p-5 flex flex-col relative group shadow-sm hover:shadow-xl transition-all duration-300 border border-slate-100">
-                  <button onClick={(e) => { e.preventDefault(); toggleFavorite(product); }} className={`absolute top-4 right-4 z-10 p-2 rounded-full backdrop-blur-sm shadow-sm transition-all ${isFavorite(product.id) ? 'bg-white text-pink-500' : 'bg-white/50 text-slate-400 hover:bg-white hover:text-pink-500 opacity-0 group-hover:opacity-100'}`}><Heart size={18} className={isFavorite(product.id) ? "fill-pink-500" : ""} /></button>
-                  {product.badge && <span className="absolute top-4 left-4 z-10 bg-white/90 backdrop-blur-sm text-slate-800 text-[10px] font-extrabold px-2 py-1 rounded-full shadow-sm tracking-wider uppercase">{product.badge}</span>}
-
-                  <Link to={`/producto/${product.slug}`} className="flex flex-col flex-1 cursor-pointer">
-                    <div className={`h-40 rounded-[1.5rem] flex items-center justify-center mb-5 transition-transform duration-500 group-hover:scale-95 relative overflow-hidden ${product.image_url ? 'bg-slate-100' : 'bg-transparent'}`}>
-                     <OptimizedImage 
-                      src={product.image_url} 
-                      alt={product.name} 
-                      className="w-full h-full object-cover" 
-                      />
-                      </div>
-                    <h4 className="font-semibold text-slate-800 text-sm leading-snug mb-4 line-clamp-2 group-hover:text-pink-500 transition-colors">{product.name}</h4>
-                  </Link>
-                  
-                  <div className="mt-auto">
-                    <div className="relative flex items-center justify-between">
-                      <span className="font-bold text-lg text-slate-800">${product.price}</span>
-                      <button onClick={(e) => { e.preventDefault(); setOpenPopoverId(openPopoverId === product.id ? null : product.id); }} className="bg-slate-50 hover:bg-slate-800 hover:text-white text-slate-600 text-xs font-bold px-4 py-2.5 rounded-full transition-colors shadow-sm relative z-10">Agregar</button>
-                      
-                      {openPopoverId === product.id && <QuickAddPopover product={product} onClose={() => setOpenPopoverId(null)} />}
-                    </div>
-                  </div>
-                </div>
+                <ProductCard 
+                  key={product.id} 
+                  product={product} 
+                  openPopoverId={openPopoverId} 
+                  setOpenPopoverId={setOpenPopoverId} 
+                />
               ))}
+
             </div>
           )}
         </section>

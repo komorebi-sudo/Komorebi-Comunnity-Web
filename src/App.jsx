@@ -14,30 +14,33 @@ import AdminDashboard from './pages/AdminDashboard'; // Pon esto arriba con los 
 import SearchProducts from './pages/SearchProducts';
 import UserProfile from './pages/UserProfile';
 import { AuthProvider } from './context/AuthContext';
+import { HelmetProvider } from 'react-helmet-async';
 
 export default function App() {
   return (
-    <AuthProvider>
+    <HelmetProvider>
+     <AuthProvider>
        <FavoritesProvider> {/* 3. Envolvemos la app en el FavoritesProvider */}
          <CartProvider>
           <BrowserRouter>
            <CartPanel /> 
-            <Routes>
-            <Route path="/" element={<Home />} />
-            <Route path="/explorar-tiendas" element={<ExploreStores />} />
-            <Route path="/tienda/:storeSlug" element={<StoreCatalog />} />
-            <Route path="/producto/:productSlug" element={<ProductDetail />} />
-            <Route path="/checkout" element={<Checkout />} />
-            <Route path="/favoritos" element={<Favorites />} /> {/* 4. Añadimos la ruta */}
-            <Route path="/login" element={<Login />} />
-            <Route path="/admin" element={<AdminDashboard />} />
-            <Route path="/buscar" element={<SearchProducts />} />
-            <Route path="/perfil" element={<UserProfile />} />
-            <Route path="/admin/:tab?" element={<AdminDashboard />} />
-            </Routes>
-          </BrowserRouter>
-        </CartProvider>
-      </FavoritesProvider>
-    </AuthProvider>
+             <Routes>
+             <Route path="/" element={<Home />} />
+             <Route path="/explorar-tiendas" element={<ExploreStores />} />
+             <Route path="/tienda/:storeSlug" element={<StoreCatalog />} />
+             <Route path="/producto/:productSlug" element={<ProductDetail />} />
+             <Route path="/checkout" element={<Checkout />} />
+             <Route path="/favoritos" element={<Favorites />} /> {/* 4. Añadimos la ruta */}
+             <Route path="/login" element={<Login />} />
+             <Route path="/admin" element={<AdminDashboard />} />
+             <Route path="/buscar" element={<SearchProducts />} />
+             <Route path="/perfil" element={<UserProfile />} />
+             <Route path="/admin/:tab?" element={<AdminDashboard />} />
+             </Routes>
+           </BrowserRouter>
+         </CartProvider>
+       </FavoritesProvider>
+     </AuthProvider>
+    </HelmetProvider>
   );
 }
