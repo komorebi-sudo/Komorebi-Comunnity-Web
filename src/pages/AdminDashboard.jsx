@@ -1,15 +1,14 @@
-import React, { useEffect, useState, useRef } from 'react';
-import { useNavigate, Link, useParams } from 'react-router-dom';
-import { supabase } from '../lib/supabaseClient';
-import { Store, Package, Settings, Plus, LogOut, Loader2, Home, User as UserIcon, Edit, Trash2, Save, LayoutDashboard, Search, UploadCloud, ShoppingBag, Truck, MapPin, Phone, Mail, Clock, CheckCircle, X, FileText, Palette, TrendingUp } from 'lucide-react';
+import React from 'react';
+import { Link } from 'react-router-dom';
+import { Store, Package, Settings, Plus, Loader2, Edit, Trash2, Save, LayoutDashboard, UploadCloud, ShoppingBag, Truck, MapPin, Phone, Mail, Clock, CheckCircle, X, FileText, Palette, TrendingUp } from 'lucide-react';
 
 // LIBRERÍA DE GRÁFICAS
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 
-// NUEVO: LIBRERÍA DE COMPRESIÓN DE IMÁGENES
-import imageCompression from 'browser-image-compression';
+// IMPORTAMOS EL CUSTOM HOOK RECIÉN CREADO
+import { useAdmin } from '../hooks/useAdmin';
 
-// --- COMPONENTES AUXILIARES PARA LIMPIAR EL CÓDIGO ---
+// --- COMPONENTES AUXILIARES PARA DECORAR LA INTERFAZ ---
 
 const StatCard = ({ title, value, icon: Icon, color, textColor }) => (
   <div className="bg-white p-6 rounded-[2rem] shadow-sm border border-slate-100 flex items-center justify-between hover:shadow-md transition-shadow">
@@ -50,350 +49,25 @@ const AdminSidebar = ({ store, activeTab, navigate, handleLogout, pendingOrdersC
   </aside>
 );
 
-// --- COMPONENTE PRINCIPAL ---
+// --- VIEW COMPONENT ---
 
 export default function AdminDashboard() {
-  const navigate = useNavigate();
-  const { tab } = useParams();
-  const activeTab = tab || 'resumen';
-
-  const [session, setSession] = useState(null);
-  const [store, setStore] = useState(null);
-  const [products, setProducts] = useState([]);
-  const [orders, setOrders] = useState([]); 
-  const [isLoading, setIsLoading] = useState(true);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-
-  const [newStore, setNewStore] = useState({ name: '', type: '', slug: '' });
-  const [storeSettings, setStoreSettings] = useState({ name: '', type: '', slug: '', avatar_url: '', banner_url: '', template_id: 'default' });
-  
-  const [editingProductId, setEditingProductId] = useState(null);
-  const [productImageFile, setProductImageFile] = useState(null);
-  const [productImagePreview, setProductImagePreview] = useState(null);
-  const [storeAvatarFile, setStoreAvatarFile] = useState(null);
-  const [storeBannerFile, setStoreBannerFile] = useState(null);
-
-  const defaultProductState = {
-    name: '', description: '', price: '', stock: '', category: '', badge: '', image_url: '', options: {}, variant_stock: {}
-  };
-  const [newProduct, setNewProduct] = useState(defaultProductState);
-  const [optionName, setOptionName] = useState('');
-  const [optionValues, setOptionValues] = useState('');
-
-  const fileInputRef = useRef(null);
-  const [isReceiptModalOpen, setIsReceiptModalOpen] = useState(false);
-  const [orderToShip, setOrderToShip] = useState(null);
-  const [receiptFile, setReceiptFile] = useState(null);
-  const [receiptPreview, setReceiptPreview] = useState(null);
-  const receiptInputRef = useRef(null);
-
-  useEffect(() => {
-    if (!tab) navigate('/admin/resumen', { replace: true });
-  }, [tab, navigate]);
-
-  useEffect(() => {
-    async function fetchData() {
-      try {
-        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-        if (sessionError) throw sessionError;
-        if (!session) { navigate('/login'); return; }
-        setSession(session);
-
-        const { data: storeData } = await supabase.from('stores').select('*').eq('user_id', session.user.id).single();
-        if (storeData) {
-          setStore(storeData);
-          setStoreSettings({
-            name: storeData.name || '',
-            type: storeData.type || '',
-            slug: storeData.slug || '',
-            avatar_url: storeData.avatar_url || '',
-            banner_url: storeData.banner_url || '',
-            template_id: storeData.template_id || 'default'
-          });
-          
-          const { data: productsData } = await supabase.from('products').select('*').eq('store_id', storeData.id).order('created_at', { ascending: false });
-          setProducts(productsData || []);
-
-          const { data: ordersData } = await supabase.from('orders').select('*').order('created_at', { ascending: false });
-          if (ordersData) {
-            const storeOrders = ordersData.filter(order => order.items && order.items.some(item => item.store_id === storeData.id));
-            setOrders(storeOrders);
-          }
-        }
-      } catch (err) { console.error("Error al cargar datos:", err.message); } 
-      finally { setIsLoading(false); }
-    }
-    fetchData();
-  }, [navigate]);
-
-  const handleAddOption = (e) => {
-    e.preventDefault();
-    if (!optionName || !optionValues) return;
-    const valuesArray = optionValues.split(',').map(v => v.trim()).filter(v => v);
-    setNewProduct(prev => ({ ...prev, options: { ...(prev.options || {}), [optionName]: valuesArray } }));
-    setOptionName('');
-    setOptionValues('');
-  };
-
-  const handleRemoveOption = (name) => {
-    const newOptions = { ...newProduct.options };
-    delete newOptions[name];
-    setNewProduct(prev => ({ ...prev, options: newOptions }));
-  };
-
-  useEffect(() => {
-    if (!newProduct.options || Object.keys(newProduct.options).length === 0) return;
-    const keys = Object.keys(newProduct.options);
-    const combinations = keys.reduce((acc, key) => {
-      const values = Array.isArray(newProduct.options[key]) ? newProduct.options[key] : [];
-      if (values.length === 0) return acc;
-      if (acc.length === 0) return values.map(v => ({ [key]: v }));
-      const newAcc = [];
-      acc.forEach(combo => { values.forEach(v => { newAcc.push({ ...combo, [key]: v }); }); });
-      return newAcc;
-    }, []);
-
-    const newVariantStock = {};
-    combinations.forEach(combo => {
-      const comboKey = Object.values(combo).join(' | ');
-      newVariantStock[comboKey] = newProduct.variant_stock?.[comboKey] || '';
-    });
-    
-    setNewProduct(prev => {
-       const isDifferent = JSON.stringify(prev.variant_stock) !== JSON.stringify(newVariantStock);
-       if (isDifferent) {
-          return { ...prev, variant_stock: newVariantStock };
-       }
-       return prev;
-    });
-  }, [newProduct.options]);
-
-  useEffect(() => {
-    const hasVariants = newProduct.variant_stock && Object.keys(newProduct.variant_stock).length > 0;
-    if (hasVariants) {
-      const totalStock = Object.values(newProduct.variant_stock).reduce((sum, val) => sum + (parseInt(val) || 0), 0);
-      setNewProduct(prev => {
-        if (prev.stock === totalStock) return prev;
-        return { ...prev, stock: totalStock };
-      });
-    }
-  }, [newProduct.variant_stock]);
-
-  // --- MOTOR DE COMPRESIÓN DE IMÁGENES INYECTADO AQUÍ ---
-  const uploadImage = async (file, pathPrefix) => {
-    if (!file) return null;
-
-    // Configuración de la compresión web
-    const options = {
-      maxSizeMB: 0.1, // Máximo 100 KB para que sea súper ligero
-      maxWidthOrHeight: 1024, // Recorta a 1024px máximo
-      useWebWorker: true,
-    };
-
-    let fileToUpload = file;
-    try {
-      // Exprime la imagen antes de subirla
-      fileToUpload = await imageCompression(file, options);
-      console.log(`Foto exprimida: de ${(file.size / 1024 / 1024).toFixed(2)} MB a ${(fileToUpload.size / 1024 / 1024).toFixed(2)} MB`);
-    } catch (error) {
-      console.warn("Hubo un pequeño error exprimiendo, se subirá la original:", error);
-    }
-
-    // Le sacamos la extensión o le asignamos jpeg por defecto si el compresor la ocultó
-    const fileExt = fileToUpload.name.split('.').pop() || 'jpeg';
-    const fileName = `${pathPrefix}-${Date.now()}.${fileExt}`;
-    const filePath = `${session.user.id}/${fileName}`;
-    
-    // Subimos la imagen ya comprimida a Supabase
-    const { error: uploadError } = await supabase.storage.from('images').upload(filePath, fileToUpload);
-    if (uploadError) throw uploadError;
-    
-    const { data } = supabase.storage.from('images').getPublicUrl(filePath);
-    return data.publicUrl;
-  };
-
-  const handleLogout = async () => { await supabase.auth.signOut(); navigate('/'); };
-
-  const handleCreateStore = async (e) => {
-    e.preventDefault();
-    setIsSubmitting(true);
-    try {
-      const { data, error } = await supabase.from('stores').insert([{
-        user_id: session.user.id, name: newStore.name, type: newStore.type, slug: newStore.slug, template_id: 'default'
-      }]).select();
-      if (error) throw error;
-      setStore(data[0]);
-      setStoreSettings({ ...data[0], template_id: 'default' });
-    } catch (err) { alert("Error al crear la tienda"); } finally { setIsSubmitting(false); }
-  };
-
-  const handleSaveSettings = async (e) => {
-    e.preventDefault();
-    setIsSubmitting(true);
-    try {
-      let finalAvatarUrl = storeSettings.avatar_url;
-      let finalBannerUrl = storeSettings.banner_url;
-
-      if (storeAvatarFile) finalAvatarUrl = await uploadImage(storeAvatarFile, 'avatar');
-      if (storeBannerFile) finalBannerUrl = await uploadImage(storeBannerFile, 'banner');
-
-      const updates = { 
-        name: storeSettings.name, 
-        type: storeSettings.type, 
-        avatar_url: finalAvatarUrl, 
-        banner_url: finalBannerUrl,
-        template_id: storeSettings.template_id 
-      };
-
-      const { error } = await supabase.from('stores').update(updates).eq('id', store.id);
-      if (error) throw error;
-      
-      setStore({ ...store, ...updates });
-      setStoreSettings({ ...storeSettings, ...updates });
-      setStoreAvatarFile(null);
-      setStoreBannerFile(null);
-      alert("¡Configuración actualizada con éxito!");
-    } catch (err) { 
-      console.error(err);
-      alert("Error al guardar configuración"); 
-    } finally { setIsSubmitting(false); }
-  };
-
-  const handleSaveProduct = async (e) => {
-    e.preventDefault();
-    setIsSubmitting(true);
-    try {
-      let finalImageUrl = newProduct.image_url;
-      if (productImageFile) {
-        finalImageUrl = await uploadImage(productImageFile, 'product');
-      }
-
-      const productData = {
-        name: newProduct.name, 
-        slug: newProduct.name.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
-        description: newProduct.description || null, 
-        price: parseFloat(newProduct.price), 
-        stock: parseInt(newProduct.stock) || 0,
-        image_url: finalImageUrl || null, 
-        options: newProduct.options || {}, 
-        variant_stock: newProduct.variant_stock || {}
-      };
-
-      if (editingProductId) {
-        const { error } = await supabase.from('products').update(productData).eq('id', editingProductId);
-        if (error) throw error;
-        setProducts(products.map(p => p.id === editingProductId ? { ...p, ...productData } : p));
-      } else {
-        productData.store_id = store.id;
-        const { data, error } = await supabase.from('products').insert([productData]).select();
-        if (error) throw error;
-        setProducts([data[0], ...products]);
-      }
-
-      setNewProduct(defaultProductState);
-      setEditingProductId(null);
-      setProductImageFile(null);
-      setProductImagePreview(null);
-      navigate('/admin/productos');
-    } catch (err) { 
-      console.error("Error real de Supabase:", err);
-      alert(`Error del servidor: ${err.message || 'Desconocido'}`); 
-    } finally { 
-      setIsSubmitting(false); 
-    }
-  };
-
-  const handleDeleteProduct = async (id) => {
-    if (!window.confirm("¿Seguro que deseas eliminar este producto permanentemente?")) return;
-    try {
-      const { error } = await supabase.from('products').delete().eq('id', id);
-      if (error) throw error;
-      setProducts(products.filter(p => p.id !== id));
-    } catch (err) { alert("Error al eliminar"); }
-  };
-
-  const handleEditClick = (product) => {
-    setNewProduct({
-      name: product.name || '',
-      description: product.description || '',
-      price: product.price || '',
-      stock: product.stock || 0,
-      category: product.category || '',
-      badge: product.badge || '',
-      image_url: product.image_url || '',
-      options: product.options || {},
-      variant_stock: product.variant_stock || {}
-    });
-    setEditingProductId(product.id);
-    setProductImagePreview(product.image_url || null);
-    setProductImageFile(null);
-    navigate('/admin/nuevo-producto');
-  };
-
-  const handleCancelEdit = () => {
-    setNewProduct(defaultProductState);
-    setEditingProductId(null);
-    setProductImageFile(null);
-    setProductImagePreview(null);
-    navigate('/admin/productos');
-  };
-
-  const handleOpenReceiptModal = (orderId) => {
-    setOrderToShip(orderId);
-    setIsReceiptModalOpen(true);
-  };
-
-  const handleCloseReceiptModal = () => {
-    setIsReceiptModalOpen(false);
-    setOrderToShip(null);
-    setReceiptFile(null);
-    setReceiptPreview(null);
-  };
-
-  const handleConfirmShipment = async () => {
-    if (!receiptFile) {
-      alert("Por favor adjunta la foto de la guía de envío para el cliente.");
-      return;
-    }
-    setIsSubmitting(true);
-    try {
-      const receiptUrl = await uploadImage(receiptFile, 'receipt');
-      const { error } = await supabase.from('orders')
-        .update({ status: 'enviado', shipping_receipt_url: receiptUrl })
-        .eq('id', orderToShip);
-      
-      if (error) throw error;
-      
-      setOrders(orders.map(o => o.id === orderToShip ? { ...o, status: 'enviado', shipping_receipt_url: receiptUrl } : o));
-      handleCloseReceiptModal();
-    } catch (err) {
-      console.error(err);
-      alert("Error al confirmar el envío.");
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
+  // Consumimos todo el cerebro unificado del hook
+  const {
+    navigate, activeTab, session, store, products, orders, isLoading, isSubmitting,
+    newStore, setNewStore, storeSettings, setStoreSettings, editingProductId,
+    productImagePreview, setProductImageFile, setProductImagePreview,
+    setStoreAvatarFile, setStoreBannerFile,
+    newProduct, setNewProduct, optionName, setOptionName, optionValues, setOptionValues,
+    fileInputRef, isReceiptModalOpen, handleAddOption, handleRemoveOption, handleLogout,
+    handleCreateStore, handleSaveSettings, handleSaveProduct, handleDeleteProduct,
+    handleEditClick, handleCancelEdit, handleOpenReceiptModal, handleCloseReceiptModal,
+    handleConfirmShipment, pendingOrdersCount, totalRevenue, hasVariants, salesData,
+    receiptPreview, receiptInputRef, setReceiptFile, setReceiptPreview, defaultProductState
+  } = useAdmin();
 
   if (isLoading) return <div className="min-h-screen bg-[#faf9f8] flex items-center justify-center"><Loader2 className="animate-spin text-pink-500" size={32}/></div>;
   if (!session) return null;
-
-  const pendingOrdersCount = orders.filter(o => o.status === 'pagado').length;
-  const totalRevenue = orders.reduce((total, order) => {
-    const storeItems = order.items.filter(i => i.store_id === store?.id);
-    const orderTotal = storeItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-    return total + orderTotal;
-  }, 0);
-
-  const hasVariants = Object.keys(newProduct.variant_stock || {}).length > 0;
-
-  // Lógica de Gráfica: Calculamos los productos más vendidos
-  const salesData = products.map(p => {
-    const totalSold = orders.reduce((sum, order) => {
-      const item = order.items?.find(i => i.product_id === p.id);
-      return sum + (item ? item.quantity : 0);
-    }, 0);
-    return { name: p.name.substring(0, 15) + (p.name.length > 15 ? '...' : ''), ventas: totalSold };
-  }).sort((a, b) => b.ventas - a.ventas).slice(0, 5); // Tomamos el Top 5
 
   return (
     <div className="min-h-screen bg-[#faf9f8] text-slate-700 flex">
@@ -532,7 +206,7 @@ export default function AdminDashboard() {
           <div className="animate-in fade-in duration-300">
             <div className="flex items-center justify-between mb-8">
               <h1 className="text-3xl font-extrabold text-slate-800">Tus Productos</h1>
-              <button onClick={() => { setEditingProductId(null); setNewProduct(defaultProductState); setProductImagePreview(null); navigate('/admin/nuevo-producto'); }} className="bg-pink-500 text-white px-6 py-3 rounded-2xl font-bold hover:bg-pink-600 transition-all flex items-center gap-2 shadow-md hover:-translate-y-0.5"><Plus size={20} /> Crear Producto</button>
+              <button onClick={() => { navigate('/admin/nuevo-producto'); }} className="bg-pink-500 text-white px-6 py-3 rounded-2xl font-bold hover:bg-pink-600 transition-all flex items-center gap-2 shadow-md hover:-translate-y-0.5"><Plus size={20} /> Crear Producto</button>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
               {products.map(p => (

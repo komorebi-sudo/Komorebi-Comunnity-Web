@@ -1,12 +1,15 @@
-import React, { useEffect, useState } from 'react';
-import { Store, ArrowRight, Star, BookOpen, Shirt, Sparkles, Gamepad2, Coffee, Palette, Loader2 } from 'lucide-react';
+import React, { useState } from 'react';
+import { Store, ArrowRight, Star, BookOpen, Shirt, Sparkles, Gamepad2, Coffee, Palette } from 'lucide-react';
 import { supabase } from '../lib/supabaseClient';
-import { Link } from 'react-router-dom'; 
+import { Link } from 'react-router-dom';
 
-// IMPORTACIONES ARQUITECTÓNICAS
+// IMPORTAMOS REACT QUERY
+import { useQuery } from '@tanstack/react-query';
+
 import MarketplaceLayout from '../components/layout/MarketplaceLayout';
 import ProductCard from '../components/ProductCard';
 import OptimizedImage from '../components/ui/OptimizedImage';
+import ProductSkeleton from '../components/ui/ProductSkeleton';
 
 const mockCategoriesGrid = [
   { id: 1, name: "Snacks & Dulces", count: "12 tiendas", Icon: Coffee, color: "bg-pink-100", textColor: "text-pink-600" },
@@ -19,27 +22,28 @@ const mockCategoriesGrid = [
 
 export default function Home() {
   const [openPopoverId, setOpenPopoverId] = useState(null);
-  const [stores, setStores] = useState([]);
-  const [isLoadingStores, setIsLoadingStores] = useState(true);
-  const [featuredProducts, setFeaturedProducts] = useState([]);
-  const [isLoadingProducts, setIsLoadingProducts] = useState(true);
 
-  useEffect(() => {
-    async function fetchData() {
-      try {
-        let { data: storesData } = await supabase.from('stores').select('*');
-        setStores(storesData || []); 
-        let { data: productsData } = await supabase.from('products').select('*').order('created_at', { ascending: false }).limit(8);
-        setFeaturedProducts(productsData || []);
-      } catch (err) { 
-        console.error("Error de conexión:", err); 
-      } finally { 
-        setIsLoadingStores(false); 
-        setIsLoadingProducts(false); 
-      }
+  // --- MAGIA DE REACT QUERY ---
+  // 1. Consultamos las tiendas (se guardan en la llave 'stores')
+  const { data: stores = [], isLoading: isLoadingStores } = useQuery({
+    queryKey: ['stores'],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('stores').select('*');
+      if (error) throw error;
+      return data || [];
     }
-    fetchData();
-  }, []); 
+  });
+
+  // 2. Consultamos los productos (se guardan en la llave 'featuredProducts')
+  const { data: featuredProducts = [], isLoading: isLoadingProducts } = useQuery({
+    queryKey: ['featuredProducts'],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('products').select('*').order('created_at', { ascending: false }).limit(8);
+      if (error) throw error;
+      return data || [];
+    }
+  });
+  // ----------------------------
 
   return (
     <MarketplaceLayout showSearch={true}>
@@ -73,13 +77,33 @@ export default function Home() {
           </div>
         </section>
 
-        {/* TIENDAS QUE AMAMOS (Optimizadas) */}
+        {/* TIENDAS QUE AMAMOS */}
         <section className="mb-24">
           <div className="flex items-center justify-between mb-10">
             <h2 className="text-2xl font-bold text-slate-800 flex items-center gap-3">Tiendas que amamos</h2>
             <Link to="/explorar-tiendas" className="text-sm font-semibold text-pink-500 hover:text-pink-600 flex items-center">Explorar todas <ArrowRight size={16} className="ml-1" /></Link>
           </div>
-          {isLoadingStores ? (<div className="text-center py-10 text-slate-400 font-medium">Buscando tiendas en Komorebi... 🌸</div>) : stores.length === 0 ? (<div className="text-center py-10 bg-white rounded-3xl border border-slate-100 shadow-sm text-slate-500">Aún no hay tiendas registradas.</div>) : (
+          
+          {isLoadingStores ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+              {[...Array(4)].map((_, i) => (
+                <div key={i} className="bg-white rounded-[2rem] overflow-hidden flex flex-col shadow-sm border border-slate-100 h-[340px] animate-pulse">
+                  <div className="h-32 bg-slate-200 w-full relative z-10"></div>
+                  <div className="absolute top-24 left-6 z-20 w-16 h-16 bg-slate-300 rounded-full border-4 border-white"></div>
+                  <div className="pt-10 pb-6 px-6 flex flex-col flex-1 bg-white relative z-10 mt-2">
+                    <div className="h-5 bg-slate-200 rounded-full w-3/4 mb-2"></div>
+                    <div className="h-4 bg-slate-200 rounded-full w-1/2 mb-6"></div>
+                    <div className="mt-auto flex items-center justify-between">
+                      <div className="h-4 bg-slate-200 rounded-full w-1/4"></div>
+                      <div className="h-8 bg-slate-200 rounded-full w-20"></div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : stores.length === 0 ? (
+            <div className="text-center py-10 bg-white rounded-3xl border border-slate-100 shadow-sm text-slate-500">Aún no hay tiendas registradas.</div>
+          ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
               {stores.map(store => (
                 <div key={store.id} className="bg-white rounded-[2rem] overflow-hidden flex flex-col group shadow-sm hover:shadow-xl transition-all duration-300 border border-slate-100 relative">
@@ -103,10 +127,19 @@ export default function Home() {
           )}
         </section>
 
-        {/* TESOROS DEL DÍA (Con ProductCard) */}
+        {/* TESOROS DEL DÍA */}
         <section className="mb-24">
           <h2 className="text-2xl font-bold text-slate-800 mb-10 flex items-center gap-3">Tesoros del día</h2>
-          {isLoadingProducts ? (<div className="flex items-center justify-center py-10 text-slate-400"><Loader2 className="animate-spin mr-2 text-pink-400" size={24} /> Buscando productos...</div>) : featuredProducts.length === 0 ? (<div className="text-center py-10 bg-white rounded-3xl border border-slate-100 shadow-sm text-slate-500">Aún no hay productos.</div>) : (
+          
+          {isLoadingProducts ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-6">
+              {[...Array(4)].map((_, i) => (
+                <ProductSkeleton key={i} />
+              ))}
+            </div>
+          ) : featuredProducts.length === 0 ? (
+            <div className="text-center py-10 bg-white rounded-3xl border border-slate-100 shadow-sm text-slate-500">Aún no hay productos.</div>
+          ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-6">
               {featuredProducts.map(product => {
                 const productStore = stores.find(s => s.id === product.store_id);
