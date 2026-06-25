@@ -1,94 +1,69 @@
 import React from 'react';
-import { X, ShoppingBag, Trash2 } from 'lucide-react';
+import { X, ShoppingBag, Trash2, CheckSquare, Square } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useCart } from '../context/CartContext';
 
 export default function CartPanel() {
-  const { cart, isCartOpen, toggleCart, removeFromCart, getCartTotal } = useCart();
+  const { cart, isCartOpen, toggleCart, removeFromCart, getSelectedTotal, toggleItemSelection, toggleAllSelection, getSelectedItemsCount } = useCart();
 
   if (!isCartOpen) return null;
 
-  // LA MISMA MAGIA VISUAL: Agrupamos los productos por su ID original
   const groupedCart = Object.values(cart.reduce((acc, item) => {
     const baseId = item.originalId || item.id;
-    
-    if (!acc[baseId]) {
-      acc[baseId] = {
-        ...item,
-        id: baseId,
-        totalQuantity: 0,
-        variantList: [] 
-      };
-    }
-    
+    if (!acc[baseId]) { acc[baseId] = { ...item, id: baseId, totalQuantity: 0, variantList: [] }; }
     acc[baseId].totalQuantity += item.quantity;
-
-    if (item.selectedOptions && Object.keys(item.selectedOptions).length > 0) {
-      const variantString = Object.values(item.selectedOptions).join(' • ');
-      // Guardamos el "cartItemId" real para poder eliminar esta variante específica
-      acc[baseId].variantList.push({ name: variantString, qty: item.quantity, cartItemId: item.id });
-    } else {
-      // Si no tiene variantes, lo guardamos como "default"
-      acc[baseId].variantList.push({ name: 'default', qty: item.quantity, cartItemId: item.id });
-    }
+    
+    // Inyectamos el isSelected a la variante
+    const variantString = (item.selectedOptions && Object.keys(item.selectedOptions).length > 0) ? Object.values(item.selectedOptions).join(' • ') : 'default';
+    acc[baseId].variantList.push({ name: variantString, qty: item.quantity, cartItemId: item.id, isSelected: item.isSelected !== false });
 
     return acc;
   }, {}));
 
+  const allSelected = cart.length > 0 && cart.every(item => item.isSelected !== false);
+
   return (
     <>
-      {/* Overlay oscuro para tapar el fondo */}
-      <div 
-        className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 transition-opacity" 
-        onClick={toggleCart} 
-      />
-      
-      {/* Panel Lateral */}
+      <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 transition-opacity" onClick={toggleCart} />
       <div className="fixed inset-y-0 right-0 z-50 w-full sm:w-[400px] bg-white shadow-2xl flex flex-col transform transition-transform duration-300">
         
         {/* Header del Carrito */}
         <div className="h-20 flex items-center justify-between px-6 border-b border-slate-100">
           <h2 className="text-xl font-bold text-slate-800 flex items-center">
-            <ShoppingBag className="mr-3 text-pink-500" size={22} /> 
-            Tu Carrito
+            <ShoppingBag className="mr-3 text-pink-500" size={22} /> Tu Carrito
           </h2>
-          <button 
-            onClick={toggleCart} 
-            className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-50 rounded-full transition-colors"
-          >
-            <X size={20} />
-          </button>
+          <button onClick={toggleCart} className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-50 rounded-full transition-colors"><X size={20} /></button>
         </div>
+
+        {/* Controles Generales */}
+        {cart.length > 0 && (
+          <div className="px-6 py-3 border-b border-slate-100 bg-slate-50 flex justify-between items-center">
+            <button onClick={() => toggleAllSelection(!allSelected)} className="flex items-center gap-2 text-sm font-bold text-slate-600 hover:text-pink-500 transition-colors">
+              {allSelected ? <CheckSquare size={18} className="text-pink-500" /> : <Square size={18} />} Seleccionar Todo
+            </button>
+            <span className="text-xs font-bold text-slate-400">{getSelectedItemsCount()} arts. a pagar</span>
+          </div>
+        )}
 
         {/* Contenido (Lista de Productos) */}
         <div className="flex-1 overflow-y-auto p-6">
           {cart.length === 0 ? (
             <div className="h-full flex flex-col items-center justify-center text-center">
-              <div className="w-20 h-20 bg-slate-50 rounded-full flex items-center justify-center mb-6">
-                <ShoppingBag size={32} className="text-slate-300" />
-              </div>
+              <div className="w-20 h-20 bg-slate-50 rounded-full flex items-center justify-center mb-6"><ShoppingBag size={32} className="text-slate-300" /></div>
               <p className="text-xl font-bold text-slate-800 mb-2">Tu carrito está vacío</p>
               <p className="text-slate-500 text-sm mb-8">¡Añade algunos productos para empezar!</p>
-              <button 
-                onClick={toggleCart} 
-                className="bg-pink-100 text-pink-600 px-6 py-3 rounded-full font-bold hover:bg-pink-200 transition-colors"
-              >
-                Seguir explorando
-              </button>
+              <button onClick={toggleCart} className="bg-pink-100 text-pink-600 px-6 py-3 rounded-full font-bold hover:bg-pink-200 transition-colors">Seguir explorando</button>
             </div>
           ) : (
             <div className="space-y-6">
               {groupedCart.map((item) => (
                 <div key={item.id} className="flex gap-4 items-start">
-                  
-                  {/* --- AQUÍ REEMPLAZAMOS EL EMOJI POR LA FOTO O EL CARTEL DIVERTIDO --- */}
-                  <div className={`w-20 h-20 rounded-2xl overflow-hidden flex-shrink-0 shadow-sm relative ${item.image_url ? 'bg-slate-100 border border-slate-100' : 'bg-slate-50 border-2 border-dashed border-slate-200'}`}>
+                  <div className="w-20 h-20 rounded-2xl overflow-hidden flex-shrink-0 shadow-sm relative bg-slate-50 border-2 border-dashed border-slate-200">
                     {item.image_url ? (
                       <img src={item.image_url} alt={item.name} className="w-full h-full object-cover" />
                     ) : (
                       <div className="flex flex-col items-center justify-center p-1 text-center w-full h-full">
-                        <span className="text-[8px] font-bold text-slate-400 mb-0.5 leading-tight">Ups aqui deberia haber una foto hermosa...</span>
-                        <span className="text-[6px] text-slate-400/80 font-medium">alguien sera despedido hoy</span>
+                        <span className="text-[8px] font-bold text-slate-400 mb-0.5 leading-tight">Sin foto</span>
                       </div>
                     )}
                   </div>
@@ -97,31 +72,23 @@ export default function CartPanel() {
                     <h4 className="font-bold text-slate-800 text-sm truncate">{item.name}</h4>
                     <p className="text-pink-500 font-black text-sm mb-3">${item.price}</p>
                     
-                    {/* ZONA DE VARIANTES */}
                     <div className="space-y-2">
                       {item.variantList.map((variant, index) => (
-                        <div key={index} className="flex items-center justify-between bg-slate-50 p-2.5 rounded-xl border border-slate-100">
-                          <div className="flex-1 min-w-0 pr-2">
-                            {variant.name !== 'default' && (
-                              <span className="text-[11px] font-bold text-slate-600 block truncate mb-0.5">
-                                {variant.name}
-                              </span>
-                            )}
-                            <span className="text-xs font-medium text-slate-500">
-                              Cant: <span className="font-bold text-slate-700">{variant.qty}</span>
-                            </span>
+                        <div key={index} className={`flex items-center justify-between p-2.5 rounded-xl border transition-all ${variant.isSelected ? 'bg-white border-pink-200 shadow-sm' : 'bg-slate-50 border-slate-100 opacity-60 grayscale'}`}>
+                          
+                          {/* CHECKBOX DE SELECCIÓN */}
+                          <div className="flex items-center gap-3 flex-1 min-w-0">
+                            <button onClick={() => toggleItemSelection(variant.cartItemId)} className="text-slate-400 hover:text-pink-500 transition-colors flex-shrink-0">
+                               {variant.isSelected ? <CheckSquare size={18} className="text-pink-500" /> : <Square size={18} />}
+                            </button>
+                            
+                            <div className="flex-1 min-w-0 pr-2">
+                              {variant.name !== 'default' && <span className="text-[11px] font-bold text-slate-600 block truncate mb-0.5">{variant.name}</span>}
+                              <span className="text-xs font-medium text-slate-500">Cant: <span className="font-bold text-slate-700">{variant.qty}</span></span>
+                            </div>
                           </div>
                           
-                          {/* BOTÓN ELIMINAR */}
-                          {removeFromCart && (
-                            <button 
-                              onClick={() => removeFromCart(variant.cartItemId)}
-                              className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors flex-shrink-0"
-                              title="Eliminar"
-                            >
-                              <Trash2 size={16} />
-                            </button>
-                          )}
+                          <button onClick={() => removeFromCart(variant.cartItemId)} className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors flex-shrink-0" title="Eliminar"><Trash2 size={16} /></button>
                         </div>
                       ))}
                     </div>
@@ -136,15 +103,19 @@ export default function CartPanel() {
         {cart.length > 0 && (
           <div className="border-t border-slate-100 p-6 bg-slate-50/50">
             <div className="flex justify-between items-center mb-6">
-              <span className="text-slate-500 font-bold">Subtotal:</span>
-              <span className="text-3xl font-black text-slate-800">${getCartTotal()}</span>
+              <span className="text-slate-500 font-bold">Total a pagar:</span>
+              <span className="text-3xl font-black text-slate-800">${getSelectedTotal()}</span>
             </div>
+            
             <Link 
               to="/checkout" 
-              onClick={toggleCart}
-              className="w-full bg-slate-800 text-white font-bold py-4 rounded-2xl shadow-md hover:bg-slate-700 hover:shadow-lg transition-all flex items-center justify-center transform hover:-translate-y-0.5"
+              onClick={(e) => {
+                if(getSelectedItemsCount() === 0) { e.preventDefault(); return; }
+                toggleCart();
+              }}
+              className={`w-full font-bold py-4 rounded-2xl shadow-md transition-all flex items-center justify-center transform hover:-translate-y-0.5 ${getSelectedItemsCount() === 0 ? 'bg-slate-300 text-white cursor-not-allowed shadow-none hover:translate-y-0' : 'bg-slate-800 text-white hover:bg-slate-700 hover:shadow-lg'}`}
             >
-              Proceder al Pago
+              {getSelectedItemsCount() === 0 ? 'Selecciona al menos 1 producto' : 'Proceder al Pago'}
             </Link>
           </div>
         )}

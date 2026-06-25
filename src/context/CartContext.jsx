@@ -1,13 +1,11 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 
 const CartContext = createContext();
-
 export const useCart = () => useContext(CartContext);
 
 export const CartProvider = ({ children }) => {
   const [isCartOpen, setIsCartOpen] = useState(false);
-  
-  // MAGIA DE ESCALABILIDAD: Al iniciar, intentamos leer el carrito guardado en el navegador
+
   const [cart, setCart] = useState(() => {
     try {
       const localData = localStorage.getItem('komorebi_cart');
@@ -17,7 +15,6 @@ export const CartProvider = ({ children }) => {
     }
   });
 
-  // MAGIA DE ESCALABILIDAD: Cada vez que el carrito cambie, lo guardamos automáticamente en el navegador
   useEffect(() => {
     localStorage.setItem('komorebi_cart', JSON.stringify(cart));
   }, [cart]);
@@ -33,6 +30,7 @@ export const CartProvider = ({ children }) => {
       if (existingItemIndex > -1) {
         const newCart = [...prevCart];
         newCart[existingItemIndex].quantity += quantity;
+        newCart[existingItemIndex].isSelected = true; // Si lo vuelve a agregar, lo seleccionamos
         return newCart;
       }
 
@@ -42,10 +40,10 @@ export const CartProvider = ({ children }) => {
         selectedOptions, 
         combo,
         originalId: product.id,
-        id: `${product.id}-${combo}` 
+        id: `${product.id}-${combo}`,
+        isSelected: true // NUEVO: Por defecto viene seleccionado
       }];
     });
-    // ¡ELIMINADO! setIsCartOpen(true); para no interrumpir la navegación del cliente
   };
 
   const removeFromCart = (itemId) => {
@@ -64,21 +62,44 @@ export const CartProvider = ({ children }) => {
     );
   };
 
-  const getCartTotal = () => {
-    return cart.reduce((total, item) => total + (item.price * item.quantity), 0).toFixed(2);
+  // --- NUEVAS FUNCIONES DE SELECCIÓN ---
+  
+  const toggleItemSelection = (itemId) => {
+    setCart((prevCart) => prevCart.map(item => 
+      item.id === itemId ? { ...item, isSelected: item.isSelected === false ? true : false } : item
+    ));
   };
+
+  const toggleAllSelection = (selectAll) => {
+    setCart(prevCart => prevCart.map(item => ({ ...item, isSelected: selectAll })));
+  };
+
+  const getSelectedTotal = () => {
+    return cart
+      .filter(item => item.isSelected !== false) // Asumimos true por defecto por si hay carritos viejos
+      .reduce((total, item) => total + (item.price * item.quantity), 0)
+      .toFixed(2);
+  };
+
+  const getSelectedItemsCount = () => {
+    return cart.filter(item => item.isSelected !== false).reduce((count, item) => count + item.quantity, 0);
+  };
+
+  const clearSelectedItems = () => {
+    // Borramos solo los seleccionados, MANTENEMOS los deseleccionados
+    setCart(prevCart => prevCart.filter(item => item.isSelected === false));
+  };
+
+  // -------------------------------------
 
   const getCartCount = () => {
     return cart.reduce((count, item) => count + item.quantity, 0);
   };
 
-  const clearCart = () => {
-    setCart([]);
-  };
-
   return (
     <CartContext.Provider value={{ 
-      cart, isCartOpen, toggleCart, addToCart, removeFromCart, updateQuantity, getCartTotal, getCartCount, clearCart 
+      cart, isCartOpen, toggleCart, addToCart, removeFromCart, updateQuantity, getCartCount,
+      toggleItemSelection, toggleAllSelection, getSelectedTotal, getSelectedItemsCount, clearSelectedItems
     }}>
       {children}
     </CartContext.Provider>

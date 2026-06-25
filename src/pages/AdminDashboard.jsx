@@ -121,12 +121,42 @@ export default function AdminDashboard() {
           </div>
         ) : activeTab === 'ventas' ? (
           <div className="animate-in fade-in duration-300 max-w-4xl">
-            <h1 className="text-3xl font-extrabold text-slate-800 mb-8 flex items-center gap-3"><ShoppingBag size={28} className="text-pink-500" /> Gestión de Pedidos</h1>
+            
+            {/* CABECERA CON FILTROS */}
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-8 gap-4">
+              <h1 className="text-3xl font-extrabold text-slate-800 flex items-center gap-3">
+                <ShoppingBag size={28} className="text-pink-500" /> Gestión de Pedidos
+              </h1>
+              
+              <div className="bg-white p-1 rounded-xl shadow-sm border border-slate-100 flex items-center">
+                <button 
+                  onClick={() => { setOrdersFilter('todos'); setOrdersLimit(10); }} 
+                  className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${ordersFilter === 'todos' ? 'bg-slate-800 text-white shadow-sm' : 'text-slate-500 hover:bg-slate-50'}`}
+                >
+                  Todos
+                </button>
+                <button 
+                  onClick={() => { setOrdersFilter('pendiente'); setOrdersLimit(10); }} 
+                  className={`px-4 py-2 rounded-lg text-sm font-bold transition-all flex items-center gap-1.5 ${ordersFilter === 'pendiente' ? 'bg-amber-100 text-amber-700 shadow-sm' : 'text-slate-500 hover:bg-slate-50'}`}
+                >
+                  Pendientes {ordersFilter === 'pendiente' && totalOrderCount > 0 && `(${totalOrderCount})`}
+                </button>
+                <button 
+                  onClick={() => { setOrdersFilter('enviado'); setOrdersLimit(10); }} 
+                  className={`px-4 py-2 rounded-lg text-sm font-bold transition-all flex items-center gap-1.5 ${ordersFilter === 'enviado' ? 'bg-emerald-100 text-emerald-700 shadow-sm' : 'text-slate-500 hover:bg-slate-50'}`}
+                >
+                  Enviados {ordersFilter === 'enviado' && totalOrderCount > 0 && `(${totalOrderCount})`}
+                </button>
+              </div>
+            </div>
+
             {orders.length === 0 ? (
               <div className="bg-white rounded-[2.5rem] p-12 text-center shadow-sm border border-slate-100 flex flex-col items-center">
                 <Package size={64} className="text-slate-200 mb-4" />
-                <h2 className="text-xl font-bold text-slate-800 mb-2">Aún no hay ventas</h2>
-                <p className="text-slate-500">Tus pedidos aparecerán aquí cuando los clientes empiecen a comprar.</p>
+                <h2 className="text-xl font-bold text-slate-800 mb-2">No hay pedidos</h2>
+                <p className="text-slate-500">
+                  {ordersFilter === 'todos' ? 'Tus pedidos aparecerán aquí cuando los clientes empiecen a comprar.' : `Aún no tienes ningún pedido marcado como ${ordersFilter}.`}
+                </p>
               </div>
             ) : (
               <div className="space-y-6">
@@ -134,15 +164,18 @@ export default function AdminDashboard() {
                   const storeItems = order.items.filter(i => i.store_id === store.id);
                   const storeTotal = storeItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
                   return (
-                    <div key={order.id} className="bg-white rounded-[2rem] p-6 shadow-sm border border-slate-100 flex flex-col gap-6">
+                    <div key={order.id} className="bg-white rounded-[2rem] p-6 shadow-sm border border-slate-100 flex flex-col gap-6 relative overflow-hidden group hover:shadow-md transition-shadow">
+                      {order.status === 'enviado' && <div className="absolute top-0 left-0 w-1.5 h-full bg-emerald-400"></div>}
+                      {order.status === 'pendiente' && <div className="absolute top-0 left-0 w-1.5 h-full bg-amber-400"></div>}
+                      
                       <div className="flex justify-between items-start border-b border-slate-50 pb-4">
                         <div>
                           <span className="text-xs font-bold text-slate-400">PEDIDO #{order.id.split('-')[0].toUpperCase()}</span>
-                          <h3 className="font-bold text-lg text-slate-800 mt-1">{new Date(order.created_at).toLocaleDateString()}</h3>
+                          <h3 className="font-bold text-lg text-slate-800 mt-1">{new Date(order.created_at).toLocaleDateString()} a las {new Date(order.created_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</h3>
                         </div>
-                        <div className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 ${order.status === 'enviado' ? 'bg-emerald-50 text-emerald-600' : 'bg-amber-50 text-yellow-600'}`}>
+                        <div className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 ${order.status === 'enviado' ? 'bg-emerald-50 text-emerald-600' : 'bg-amber-50 text-amber-600'}`}>
                            {order.status === 'enviado' ? <CheckCircle size={16}/> : <Clock size={16}/>}
-                           {order.status === 'enviado' ? 'Enviado' : 'Por Enviar'}
+                           {order.status === 'enviado' ? 'Enviado' : 'Pendiente'}
                         </div>
                       </div>
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
@@ -187,7 +220,7 @@ export default function AdminDashboard() {
                       </div>
                       <div className="pt-4 border-t border-slate-50 flex justify-end items-center">
                         {order.status === 'enviado' && order.shipping_receipt_url ? (
-                          <a href={order.shipping_receipt_url} target="_blank" rel="noreferrer" className="text-sm font-bold text-pink-500 hover:underline flex items-center gap-2">
+                          <a href={order.shipping_receipt_url} target="_blank" rel="noreferrer" className="text-sm font-bold text-pink-500 hover:underline flex items-center gap-2 bg-pink-50 px-4 py-2.5 rounded-xl">
                             <FileText size={16} /> Ver guía de envío subida
                           </a>
                         ) : (
@@ -199,6 +232,20 @@ export default function AdminDashboard() {
                     </div>
                   );
                 })}
+                
+                {/* BOTÓN DE CARGAR MÁS */}
+                {orders.length > 0 && orders.length < totalOrderCount && (
+                  <div className="pt-6 flex justify-center pb-8">
+                    <button 
+                      onClick={() => setOrdersLimit(prev => prev + 10)} 
+                      className="bg-white border-2 border-slate-200 text-slate-600 font-bold px-8 py-3.5 rounded-2xl shadow-sm hover:border-pink-300 hover:text-pink-500 hover:bg-pink-50 transition-all flex items-center gap-2"
+                    >
+                      <Loader2 size={18} className={isLoading ? "animate-spin" : "hidden"} />
+                      Cargar más pedidos ({orders.length} de {totalOrderCount})
+                    </button>
+                  </div>
+                )}
+
               </div>
             )}
           </div>
